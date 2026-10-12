@@ -2,7 +2,16 @@
   'use strict';
 
   var INVALID_LINK = 'This reset link is invalid or has expired. Request a new one from the sign-in page.';
-  var token = new URLSearchParams(window.location.search).get('token');
+  var searchParams = new URLSearchParams(window.location.search);
+  var token = searchParams.get('token');
+  var isInvite = searchParams.get('invite') === '1';
+
+  if (isInvite) {
+    var h2 = document.querySelector('.auth-card h2');
+    if (h2) h2.textContent = 'Set your password';
+    var h1 = document.querySelector('.aside-copy h1');
+    if (h1) h1.textContent = 'Set your password.';
+  }
 
   function $(id) { return document.getElementById(id); }
 

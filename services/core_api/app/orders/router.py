@@ -27,6 +27,9 @@ async def create_order(payload: CreateOrderRequest):
     Ingest order, geocode address via Nominatim, assign nearest facility via PostGIS KNN (<->),
     persist order to Postgres, and publish order.created event to orders_stream.
     """
+    # Admin invariant (§7.4, §7.5): Order intake must reject orders for inactive merchants and warehouses
+    # TODO: Query merchant by retailer_id and reject if merchant.is_active is False (HTTP 409 owner_inactive / merchant_inactive)
+    # TODO: When assigning nearest facility, filter by warehouses.is_active == True and reject if no active warehouse available
     # TODO: Geocode dropoff address via Nominatim (httpx AsyncClient with timeout)
     # TODO: Execute PostGIS KNN (<->) query to find nearest pickup_facility_id
     # TODO: Persist order record in Postgres via db-models

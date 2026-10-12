@@ -434,3 +434,32 @@ class OrderEvent(Base):
     occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="events")
+
+
+# ---------------------------------------------------------------------------
+# Admin tables
+# ---------------------------------------------------------------------------
+
+class AdminAuditLog(Base):
+    """Append-only audit log of every admin action.
+    The database trigger trg_admin_audit_log_immutable prevents UPDATE and DELETE.
+    id is a bigint identity — optimal for a high-write sequential log.
+    actor_user_id may be NULL if the admin user is later hard-deleted.
+    target_type is one of: 'user', 'driver', 'merchant', 'warehouse'.
+    details is JSONB; never store secrets, tokens or passwords in it."""
+
+    __tablename__ = "admin_audit_log"
+
+    id:            Mapped[int]                    = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    actor_user_id: Mapped[Optional[uuid.UUID]]    = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action:        Mapped[str]                    = mapped_column(Text, nullable=False)
+    target_type:   Mapped[str]                    = mapped_column(Text, nullable=False)
+    target_id:     Mapped[uuid.UUID]              = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_label:  Mapped[str]                    = mapped_column(Text, nullable=False)
+    details:       Mapped[dict]                   = mapped_column(
+                       type_=__import__("sqlalchemy.dialects.postgresql", fromlist=["JSONB"]).JSONB,
+                       nullable=False,
+                       server_default="'{}'::jsonb",
+                   )
+    ip:            Mapped[Optional[str]]          = mapped_column(Text, nullable=True)   # stored as text; inet in DB
+    occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
