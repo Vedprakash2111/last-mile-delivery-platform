@@ -11,6 +11,10 @@ load_dotenv()
 class CoreAPIConfig(BaseModel):
     """Configuration properties for Core API service."""
 
+    # --- Environment (controls security behaviour) ---
+    # Set ENV=production on Render. Anything else is treated as non-production.
+    env: str = os.getenv("ENV", "development")
+
     # --- Database ---
     database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/lastMileDB")
     postgres_pool_size: int = int(os.getenv("POSTGRES_POOL_SIZE", "2"))
@@ -36,8 +40,35 @@ class CoreAPIConfig(BaseModel):
     # --- Public base URL (used to construct password-reset links in emails) ---
     public_base_url: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
+    # --- Admin operations ---
+    app_timezone: str = os.getenv("APP_TIMEZONE", "Asia/Kolkata")
+    stale_pending_hours: int = int(os.getenv("STALE_PENDING_HOURS", "4"))
+
     # --- Cookies ---
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
+    # --- Proxy trust (Fix 4: rightmost XFF hop) ---
+    # Number of trusted reverse-proxy hops between the internet and this service.
+    # On Render: 1 (Render's load balancer). In tests: 0 or 1 depending on setup.
+    trusted_proxy_hops: int = int(os.getenv("TRUSTED_PROXY_HOPS", "1"))
+
 
 config = CoreAPIConfig()
+
+# ---------------------------------------------------------------------------
+# Fix 8: Startup deployment guard
+# Refuse to start in production if JWT secret is default or cookies are insecure.
+# ---------------------------------------------------------------------------
+_DEFAULT_SECRET = "supersecretkey_change_in_production"
+
+if config.env == "production":
+    if config.jwt_secret_key == _DEFAULT_SECRET:
+        raise RuntimeError(
+            "FATAL: JWT_SECRET_KEY is the default value. "
+            "Set a strong secret in the environment before starting in production."
+        )
+    if not config.cookie_secure:
+        raise RuntimeError(
+            "FATAL: COOKIE_SECURE must be true in production. "
+            "Set COOKIE_SECURE=true in the environment."
+        )
