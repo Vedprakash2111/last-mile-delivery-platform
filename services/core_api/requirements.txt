@@ -20,4 +20,4 @@ aiosmtplib==3.0.1
 # Rate limiting (Fix 8: was missing from service requirements)
 slowapi==0.1.9
 limits==3.6.0
-
+tzdata==2026.5

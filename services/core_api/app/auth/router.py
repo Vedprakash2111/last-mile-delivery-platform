@@ -15,10 +15,10 @@ from typing import Optional
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import schemas
-from app.auth import service
-from app.database.connection import get_db_session
-from app.config import config
+from services.core_api.app.auth import schemas
+from services.core_api.app.auth import service
+from services.core_api.app.database.connection import get_db_session
+from services.core_api.app.config import config
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ def _set_auth_cookies(response: Response, tokens: schemas._InternalTokenPair) ->
         httponly=True,
         secure=config.cookie_secure,
         samesite="lax",
+        path="/",
         max_age=15 * 60, # 15 minutes
     )
     response.set_cookie(
@@ -38,13 +39,14 @@ def _set_auth_cookies(response: Response, tokens: schemas._InternalTokenPair) ->
         httponly=True,
         secure=config.cookie_secure,
         samesite="lax",
-        max_age=7 * 24 * 60 * 60, # 7 days
+        path="/auth",
+        max_age=30 * 24 * 60 * 60, # 30 days
     )
 
 def _clear_auth_cookies(response: Response) -> None:
     """Helper to clear auth cookies on logout."""
-    response.delete_cookie(key="access_token", secure=config.cookie_secure, httponly=True, samesite="lax")
-    response.delete_cookie(key="refresh_token", secure=config.cookie_secure, httponly=True, samesite="lax")
+    response.delete_cookie(key="access_token", path="/", secure=config.cookie_secure, httponly=True, samesite="lax")
+    response.delete_cookie(key="refresh_token", path="/auth", secure=config.cookie_secure, httponly=True, samesite="lax")
 
 # ---------------------------------------------------------------------------
 # Registration
@@ -52,47 +54,35 @@ def _clear_auth_cookies(response: Response) -> None:
 
 @router.post(
     "/register/customer",
-    response_model=schemas.SessionInfo,
+    response_model=schemas.RegistrationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new customer account",
 )
 async def register_customer(
     payload: schemas.RegisterRequest,
-    response: Response,
     db: AsyncSession = Depends(get_db_session),
-) -> schemas.SessionInfo:
-    """Self-service registration for customers. Automatically logs them in."""
+) -> schemas.RegistrationResponse:
+    """Create a customer account; the user signs in separately."""
     try:
-        tokens = await service.register_user(payload, "customer", db)
-        _set_auth_cookies(response, tokens)
-        return schemas.SessionInfo(
-            user_id=tokens.user_id,
-            roles=tokens.roles,
-            redirect_to=tokens.redirect_to
-        )
+        await service.register_user(payload, "customer", db)
+        return schemas.RegistrationResponse(redirect_to="/login")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
 @router.post(
     "/register/driver",
-    response_model=schemas.SessionInfo,
+    response_model=schemas.RegistrationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new driver account",
 )
 async def register_driver(
     payload: schemas.RegisterRequest,
-    response: Response,
     db: AsyncSession = Depends(get_db_session),
-) -> schemas.SessionInfo:
-    """Self-service registration for drivers. Automatically logs them in."""
+) -> schemas.RegistrationResponse:
+    """Create a driver account; the user signs in separately."""
     try:
-        tokens = await service.register_user(payload, "driver", db)
-        _set_auth_cookies(response, tokens)
-        return schemas.SessionInfo(
-            user_id=tokens.user_id,
-            roles=tokens.roles,
-            redirect_to=tokens.redirect_to
-        )
+        await service.register_user(payload, "driver", db)
+        return schemas.RegistrationResponse(redirect_to="/login")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 

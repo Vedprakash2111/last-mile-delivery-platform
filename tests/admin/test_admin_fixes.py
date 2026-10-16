@@ -144,9 +144,9 @@ class TestFix2PublicAdminAssets:
         assert r.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_workspaces_admin_assets_missing_file_returns_404(self, client: AsyncClient):
-        """/workspaces/admin/assets/* for non-existent file returns 404 (not 500)."""
-        r = await client.get("/workspaces/admin/assets/does-not-exist.css")
+    async def test_admin_assets_missing_file_returns_404(self, client: AsyncClient, admin_token: str):
+        """/admin/assets/* for non-existent file returns 404 (not 500)."""
+        r = await client.get("/admin/assets/does-not-exist.css", cookies={"access_token": admin_token})
         assert r.status_code == 404
 
 
@@ -576,7 +576,7 @@ class TestFix9OrdersCursor:
 
 
 # =============================================================================
-# Fix 10 — Minor: HTML escaping, shell.py deduplication, ORDER BY tie-breakers,
+# Fix 10 — Minor: HTML escaping, panel session checks, ORDER BY tie-breakers,
 #          naive datetime rejection, step-up rate limit constant, rules wired
 # =============================================================================
 
@@ -611,15 +611,13 @@ class TestFix10Minor:
         from services.core_api.app.admin.deps import _LIMIT_STEP_UP
         assert _LIMIT_STEP_UP is not None
 
-    def test_shell_uses_require_admin(self):
-        """shell.py must not duplicate JWT decode logic — requires require_admin import."""
+    def test_panel_service_rechecks_user_roles(self):
+        """Panel access resolves the current user and roles from the database."""
         import inspect
-        from services.core_api.app.admin import shell as shell_mod
-        src = inspect.getsource(shell_mod)
-        assert "require_admin" in src, "shell.py must use require_admin from deps"
-        assert "_check_admin_session" not in src, (
-            "shell.py must not have the old duplicated _check_admin_session helper"
-        )
+        from services.core_api.app import panels
+        src = inspect.getsource(panels.serve_panel)
+        assert "select(User)" in src
+        assert "user.roles" in src
 
     @pytest.mark.asyncio
     async def test_naive_datetime_in_orders_returns_422(self, client: AsyncClient):

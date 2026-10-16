@@ -68,7 +68,7 @@ async def csrf_check(request: Request) -> None:
     Mismatch → 403 csrf.
     Applied to all non-GET admin requests via router dependency.
     """
-    if request.method in ("GET", "HEAD", "OPTIONS"):
+    if request.method not in ("POST", "PATCH", "DELETE"):
         return
 
     # Content-Type must be application/json for mutations (§3.4).

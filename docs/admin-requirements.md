@@ -39,7 +39,7 @@ Vehicles (fleet manager's job), merchant member management after creation (merch
 - Roles live in `user_roles`; a user may hold several. Admin console requires the `admin` role. Nothing else grants access, ever.
 - Roles admin may grant or revoke on others: `dispatcher`, `fleet_manager`, `admin` only. `customer`, `merchant`, `driver` are never granted or revoked through the console (customer/driver via self-registration, merchant via merchant creation).
 - Public registration must never be able to produce `admin`, `dispatcher` or `fleet_manager` (verify and keep it that way).
-- A `dispatcher` / `fleet_manager` with **zero** `warehouse_staff` rows has no warehouse access. Downstream workspaces must treat empty as deny. Document this in code comments where the staff-invite is implemented.
+- A `dispatcher` / `fleet_manager` with **zero** `warehouse_staff` rows has no warehouse access. Downstream role panels must treat empty as deny. Document this in code comments where the staff-invite is implemented.
 
 ---
 
@@ -54,12 +54,10 @@ Vehicles (fleet manager's job), merchant member management after creation (merch
   4. Return the user object for use in handlers (actor for audit).
 - Every handler additionally validates its own business preconditions (§8). Hiding a button in the UI is never authorization.
 
-### 3.2 Pages and static assets
-- Shell page: `GET /workspaces/admin/operations`. Static assets under `/workspaces/admin/assets/*`. Both are served **only** through an authenticated route using the same check as §3.1 (do not mount a public `StaticFiles` for admin files).
-  - Not signed in → `302 /login?next=/workspaces/admin/operations`.
-  - Signed in without admin role → `403` with a plain "Access denied" page (no admin markup, no JS).
-- `GET /admin` → `302` to the shell.
-- Headers on every admin page and `/api/admin/*` response: `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and CSP: `default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`. No inline scripts or inline event handlers anywhere.
+### 3.2 Admin pages and assets
+- Admin pages: `GET /admin` serves `index.html` (Overview); `/admin/drivers`, `/admin/users`, `/admin/merchants`, `/admin/warehouses`, `/admin/orders`, and `/admin/activity` each serve their matching HTML file. Shared assets use `/admin/assets/*`.
+- Serve pages and assets only through the admin gate. Anonymous requests redirect to `302 /login?next=<path>`. A signed-in user without the admin role receives `403` with a plain `Access denied` response. Unknown `/admin/*` paths return `404`.
+- Every page, asset, and `/api/admin/*` response receives `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and the admin Content-Security-Policy.
 
 ### 3.3 Client-side gate
 - On load the shell calls `GET /api/admin/me`. It renders **nothing else** (no nav, no page, no other API calls) until that returns 200.
@@ -186,18 +184,17 @@ State actions are idempotent when already in the target state **and** the action
 ## 6. Pages (what each page contains)
 
 ### 6.0 Shell and shared UI
-- Layout: fixed left sidebar (brand LOGIPULSE mark, nav: Overview, Drivers, Users, Merchants, Warehouses, Orders, Activity), top bar (page title, signed-in admin name + menu with Logout). Hash routing: `#/overview`, `#/drivers`, `#/users`, `#/merchants`, `#/warehouses`, `#/orders`, `#/activity`. Row click opens a **right-side drawer** at `#/<page>/<id>` (deep-linkable; for Orders `<id>` is the tracking code); Orders drawer is wide.
-- Table/list state lives in the URL query (`#/drivers?segment=pending&q=ravi&sort=created_at&dir=desc&page=2`): reload restores it. Search is debounced 300 ms; in-flight requests are aborted when a newer one starts; stale responses are ignored.
+- Layout: fixed left sidebar and topbar. Each sidebar item is a normal link to its own page: `/admin`, `/admin/drivers`, `/admin/users`, `/admin/merchants`, `/admin/warehouses`, `/admin/orders`, and `/admin/activity`. Each request loads that page's HTML; the shared shell marks the active item from `body[data-page]`.
+- Drawers are deep-linkable on the same page with `?id=<uuid>` (Orders uses the tracking code). Table and filter state stays in the query string, for example `/admin/drivers?segment=pending&q=ravi&page=2`; reload restores it. Search is debounced 300 ms; in-flight requests are aborted when a newer one starts; stale responses are ignored.
 - Shared components (build once, reuse): `DataTable` (server-driven sort/page/search/filters, optional row selection + bulk bar), `SegmentTabs` (with count badges), `StatCard`, `StatusBadge`, `Drawer`, `ConfirmDialog` (optional reason textarea / password field), `Toast`, `EmptyState`, `ErrorState` (message + Retry), `Skeleton`.
 - Every page/panel has four states: loading (skeleton), empty (explains why + the next action, shown instead of the table), error (with Retry), populated. The table and empty state are never shown together.
 - Primary action per page sits in the page header (e.g. "Invite staff", "Add merchant", "Add warehouse"). Row actions in a kebab menu + the drawer. Bulk bar appears when ≥ 1 row selected.
 - Destructive/consequential actions use `ConfirmDialog`: deactivate user/merchant/warehouse, reject driver, remove warehouse staff, revoke sessions, grant/revoke admin (with password field). Non-destructive actions (verify, unlock, reactivate) run directly then show a toast.
 - Action buttons render only when valid for the current state (e.g. Unlock only if `is_locked`), but the server still enforces everything.
 - Accessibility: keyboard reachable, visible focus ring, dialogs/drawers trap focus and close on Esc, status never conveyed by colour alone (badge has text), `aria-live` region for toasts, table headers are real `<th scope>`.
-- Status badge mapping (text + tone): order — pending(neutral), assigned(info), out_for_delivery(info), delivered(success), attempt_failed(warning), returned(warning), cancelled(neutral); driver — pending(warning), offline(neutral), available(success), on_route(info), rejected(danger); account — active(success), inactive(neutral), locked(danger), invited(info); merchant/warehouse — active(success), inactive(neutral).
-- Design: follow the reference screenshots supplied with the Phase 2 task for layout, spacing, card and table structure. Brand tokens: green `#0E5A45` / dark `#0A3D30`, yellow `#F2C230`, blue `#1B4DB1`, bg `#F5F6F1`, white cards, 12px radii; fonts Bricolage Grotesque (headings) + Hanken Grotesk (body). No CSS framework.
+- Design tokens: green `#0E5A45` / dark `#0A3D30`, yellow `#F2C230`, blue `#1B4DB1`, bg `#F5F6F1`, white cards, 12px radii. No CSS framework.
 
-### 6.1 Overview — `#/overview`
+### 6.1 Overview — `/admin`
 Purpose: "Is anything wrong, and what do I need to do now?" Data: `GET /api/admin/overview` (one call; refresh button + auto-refresh every 60 s while the tab is visible).
 1. **KPI row (5 StatCards):** Orders today · Open orders · Delivered today · Failed attempts today · Delivery success rate (7 days; "—" when no data). Each card links to Orders with the matching filter.
 2. **Needs attention (4 lists, each with count and top-5 rows, "View all" link, hidden/replaced by a "Nothing pending" empty state at zero):**
@@ -212,7 +209,7 @@ Purpose: "Is anything wrong, and what do I need to do now?" Data: `GET /api/admi
 6. **Users by role** — compact list with counts (links to Users filtered by role).
 7. **Recent admin activity** — last 8 audit entries (time, actor, sentence like "Priya verified driver Ravi K."); link → Activity.
 
-### 6.2 Drivers — `#/drivers`
+### 6.2 Drivers — `/admin/drivers`
 Purpose: approve sign-ups and see the roster. Data: `GET /api/admin/drivers`, `GET /api/admin/drivers/{id}`.
 - Segment tabs with counts: **Pending** (default) · Active · Rejected · All.
 - Search (name, email, phone, vehicle registration). Sort: registered (default oldest first for Pending, newest first otherwise), name, last login, status.
@@ -224,7 +221,7 @@ Purpose: approve sign-ups and see the roster. Data: `GET /api/admin/drivers`, `G
 - Empty states: Pending → "No drivers waiting for approval." Search with no match → "No drivers match '…'" + Clear search.
 - Reject dialog: optional reason (max 200 chars). Reason is audited and included in the rejection email.
 
-### 6.3 Users — `#/users`
+### 6.3 Users — `/admin/users`
 Purpose: find any account, manage staff and access. Data: `GET /api/admin/users`, `GET /api/admin/users/{id}`, user action endpoints.
 - Header action: **Invite staff**. Segment tabs with counts: All · Active · Inactive · Locked. Filter: role (any / customer / merchant / dispatcher / driver / fleet_manager / admin). Search (name, email, phone).
 - Columns: User (name + email/phone), Roles (chips), Status badge (Active / Inactive / Locked / Invited = never logged in with pending invite), Last login, Created, row menu.
@@ -234,7 +231,7 @@ Purpose: find any account, manage staff and access. Data: `GET /api/admin/users`
 - Admin cannot edit another user's name/email/phone (no impersonation surface).
 - Empty: "No users match these filters." + Reset filters.
 
-### 6.4 Merchants — `#/merchants`
+### 6.4 Merchants — `/admin/merchants`
 Purpose: onboard and manage merchant companies. Data: `GET /api/admin/merchants`, `GET …/{id}`, create/update/deactivate.
 - Header action: **Add merchant**. Tabs: All · Active · Inactive. Search (name, contact email). Sort: name, created, orders.
 - Columns: Merchant (name + contact email), Status badge, Members (count), Orders (total), Orders (30 days), Created, row menu.
@@ -242,7 +239,7 @@ Purpose: onboard and manage merchant companies. Data: `GET /api/admin/merchants`
 - **Add merchant dialog:** Merchant name, Contact email (optional), Contact phone (optional, E.164), Owner full name, Owner email. Helper text: "The owner receives an email to set their password. If the email already has an account, it gets merchant access." Success shows whether an invite was sent.
 - Deactivate confirm text: "New orders from this merchant will be rejected. Existing open orders continue to delivery." Empty state: "No merchants yet. Add your first merchant."
 
-### 6.5 Warehouses — `#/warehouses`
+### 6.5 Warehouses — `/admin/warehouses`
 Purpose: define the physical network. Data: `GET /api/admin/warehouses`, `GET …/{id}`, create/update/deactivate, staff add/remove.
 - Header action: **Add warehouse**. Tabs: All · Active · Inactive. Search (code, name, address). Sort: code, name, open orders.
 - Columns: Code (monospace), Name, Address, Status, Staff (count), Open orders, Active routes, row menu.
@@ -251,8 +248,8 @@ Purpose: define the physical network. Data: `GET /api/admin/warehouses`, `GET �
 - **Add warehouse dialog:** Code (A–Z, 0–9, `-`, 2–12 chars; auto-uppercased; unique), Name, Address, Latitude, Longitude (validated: −90…90, −180…180; helper "Right-click a point in Google/OpenStreetMap maps to copy coordinates").
 - Empty state: "No warehouses yet. Add the first one so staff and orders can be assigned."
 
-### 6.6 Orders — `#/orders` (read-only diagnostic ledger)
-Purpose: start from a ticket or an exception, find the order, and see exactly what the system did to it. Admin investigates; interventions (reassign, cancel, re-route) belong to the dispatch workspace and are **not** built here. Data: `GET /api/admin/orders`, `GET /api/admin/orders/counts`, `GET /api/admin/orders/{id}`.
+### 6.6 Orders — `/admin/orders` (read-only diagnostic ledger)
+Purpose: start from a ticket or an exception, find the order, and see exactly what the system did to it. Admin investigates; interventions (reassign, cancel, re-route) belong to the dispatcher panel and are **not** built here. Data: `GET /api/admin/orders`, `GET /api/admin/orders/counts`, `GET /api/admin/orders/{tracking_token}`. The tracking token is the page's order identifier; never use or expose `orders.id`.
 
 **Filter bar**
 - Search box: tracking code (exact, normalized) · merchant order ref (substring) · recipient name (substring) · recipient phone (exact, E.164).
@@ -260,7 +257,7 @@ Purpose: start from a ticket or an exception, find the order, and see exactly wh
 - Merchant select, Warehouse select (origin warehouse).
 - Created between: date + hour:minute pickers (browser local time, sent as UTC ISO).
 - "Overdue only" toggle: open orders whose `window_latest` has passed.
-- Reset filters. State lives in the URL (§6.0).
+- Reset filters. State lives in the page query string (§6.0).
 
 **Grid** (dense rows, cursor "Load more" — no row virtualization; page size 25/50/100)
 | Column | Content |
@@ -286,7 +283,7 @@ At the top of the drawer, keep a compact, copyable case summary of merchant refe
 
 **Deliberately not on this page (the data does not exist; do not fake it):** prices, GMV, delivery fees, COD/payment data, courier speed/battery/telemetry, GPS trail, proof-of-delivery photo/signature or drop-off geofence, hub-scan/solver events, contractual SLA countdowns, delivery zones/polygons, parcel dimensions (only volume is stored). Empty states: "No orders match these filters." / platform empty: "No orders yet."
 
-### 6.7 Activity — `#/activity` (read-only)
+### 6.7 Activity — `/admin/activity` (read-only)
 Purpose: who did what. Data: `GET /api/admin/activity`.
 - Filters: Action (grouped select), Actor (select of admins that appear in the log), Target type, Date range. Cursor "Load more".
 - Columns: Time, Actor, Action (human sentence, e.g. "Verified driver"), Target (label; link to the drawer if the entity still exists), Details (collapsed one-liner; expand shows key/value pairs, e.g. reason, before → after).
@@ -363,7 +360,7 @@ Blocking/unblocking a driver uses the Users endpoints (§7.3).
 | Method & path | Params / body | Rules |
 |---|---|---|
 | `GET /warehouses` | `q`, `status`, `sort=code\|name\|open_orders\|created_at`, `dir`, page params | items `{id, code, name, address, latitude, longitude, is_active, staff_count, open_orders, active_routes, created_at}`; `counts:{all,active,inactive}` |
-| `GET /warehouses/{id}` | | item + `staff:[{user_id, full_name, email, roles}]`, `orders_by_status{}`, `active_routes:[{id, driver_name, status, stops_total, stops_done}]` |
+| `GET /warehouses/{id}` | | warehouse item (including `active_routes` count) + `staff:[{user_id, full_name, email, roles}]`, `orders_by_status{}`, `active_route_list:[{id, driver_name, status, stops_total, stops_done}]` |
 | `POST /warehouses` | `{code, name, address, latitude, longitude}` | `code` trimmed+uppercased, `^[A-Z0-9-]{2,12}$`, unique (409 `warehouse_code_exists`); name ≤120; address ≤300. Audit |
 | `PATCH /warehouses/{id}` | `{name?, address?, latitude?+longitude?}` | `code` immutable (422 if sent); lat/lon must come together. Audit with before/after |
 | `POST /warehouses/{id}/deactivate` | — | 409 `warehouse_has_open_orders` / `warehouse_has_active_routes`. Audit. **Order-intake must reject orders to inactive warehouses** (same note as merchants) |
@@ -418,14 +415,12 @@ Small UI change on the existing `/reset-password` page: if URL has `invite=1`, h
 ---
 
 ## 10. Frontend technical requirements
-- Plain HTML/CSS/JS, ES modules, no build step, no CSS framework, no paid or unpinned third-party code. Chart-like visuals (funnel, supply bars) are done with CSS/SVG, no chart library.
-- Structure: `html shell` · `css/tokens.css`, `css/admin.css` · `js/api.js` (fetch wrapper, error mapping, abort support) · `js/router.js` · `js/state.js` (URL query ⇄ table state) · `js/ui/*.js` (shared components §6.0) · `js/pages/{overview,drivers,users,merchants,warehouses,orders,activity}.js`.
-- All API data inserted with `textContent` / DOM APIs. `innerHTML` only for static, hard-coded markup.
-- Zero hard-coded data. All numbers, names, options (warehouse and merchant selects, actors) come from the API.
-- Responsive down to tablet (≥ 768 px primary target); sidebar collapses to a top bar on narrow screens. Tables scroll horizontally inside their container.
-- Mutation buttons disable while in flight and show progress; double-submit impossible.
+- Plain HTML/CSS/JS, ES modules, no build step or CSS framework. No paid or unpinned third-party code.
+- Structure: `frontend/shared/{css,js}/`; `frontend/public/{home,login,register,reset-password,track}/{index.html,css/,js/}`; `frontend/core-api/admin/{index.html,drivers.html,users.html,merchants.html,warehouses.html,orders.html,activity.html,css/{tokens.css,admin.css},js/{api.js,shell.js,main.js,pages/}}`.
+- Each admin HTML document is minimal and sets `body[data-page]`; it loads `/admin/assets/js/main.js`. `shell.js` bootstraps `/api/admin/me` and creates the shared sidebar/topbar. Each sidebar link performs a normal page load. `main.js` mounts the page module and reads `id` and table state from `location.search`.
+- All API data is inserted with `textContent` / DOM APIs. `innerHTML` only for static, hard-coded markup. Zero hard-coded data. Mutations disable while in flight and show progress; double-submit impossible.
 - Data-heavy pages may show a subtle "Last refreshed" time based on the browser's most recent successful fetch. This is UI fetch time only and must not be presented as proof that upstream data is fresh.
-- On a page refresh failure, preserve the last successfully rendered data only if it is clearly marked stale and the error/retry state remains visible; never silently present old data as current.
+- On refresh failure, preserve last successfully rendered data only if clearly marked stale and the error/retry state remains visible; never silently present old data as current.
 
 ---
 
@@ -438,20 +433,12 @@ Small UI change on the existing `/reset-password` page: if URL has `invite=1`, h
 ### 11.2 Automated tests (no dependency on pre-existing data)
 1. **Route enumeration test:** iterate all routes of the app whose path starts with `/api/admin` and assert each has `require_admin` in its dependencies (fails the build if someone adds an unguarded route).
 2. For every admin endpoint: no cookie → 401; customer session → 403; driver session → 403; dispatcher session → 403; deactivated admin → 401; locked admin → 401.
-3. Shell page and assets: unauthenticated → 302 to login; non-admin → 403.
+3. All seven admin page URLs and `/admin/assets/*`: admin → 200; anonymous → 302 to login; non-admin → 403. Unknown `/admin/x` → 404.
 4. CSRF: mutation with bad `Origin` → 403 `csrf`; non-JSON content type → 415.
 5. Pure unit tests (no DB): state-transition table (§8), warehouse code/coordinate validation, sort/filter whitelist rejection, cursor encode/decode, `q` escaping.
 Integration tests that need seeded business data are optional; if you add them, create their own rows in a transaction and roll back.
 
 ---
 
-## 12. Delivery phases and acceptance
-
-**Phase 1 — Backend (stop after this; wait for review)**
-Migration §4.2, `require_admin`, headers/CSRF/rate limits, all §7 endpoints, emails, scripts §11.1, tests §11.2, gated shell route serving a placeholder page. Deliver a short list of final endpoints with query params, and note any decision you had to make where this spec was silent.
-*Accept when:* all §11.2 tests pass; every endpoint in §7 exists with the documented request/response shape; seed script runs; deactivating a user kills that user's next request; two admins cannot remove each other concurrently.
-
-**Phase 2 — Frontend (separate task; reference screenshots provided then)**
-Build §6 and §10 on the Phase 1 API in small reviewable increments: first the authenticated shell and shared UI primitives, then Overview, Drivers, Users, Merchants, Warehouses, Orders, and Activity, integrating and reviewing each page before starting the next. Do not build all pages in one pass. *Accept when:* every page implements its content list and four states; URL-restorable table state; no console errors; nothing renders before `/me` succeeds; every action in §6 works against the seeded data; keyboard-only operation works for dialogs and drawers.
-
-**Definition of done (both phases):** no admin route reachable without the admin role; no unaudited mutation; no hard-coded data; no secrets in responses or logs.
+## 12. Definition of done
+No admin page or API route is reachable without the admin role; no unaudited mutation; no hard-coded data; no secrets in responses or logs. All seven page URLs load their own HTML, preserve the shared shell with the correct active link, and have no console errors. Table and drawer state is restorable from query parameters.

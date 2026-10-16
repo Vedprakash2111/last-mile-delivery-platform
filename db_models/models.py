@@ -434,8 +434,6 @@ class OrderEvent(Base):
     occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="events")
-<<<<<<< Updated upstream
-=======
 
 
 # ---------------------------------------------------------------------------
@@ -465,4 +463,3 @@ class AdminAuditLog(Base):
                    )
     ip:            Mapped[Optional[str]]          = mapped_column(INET, nullable=True)   # inet column — validated via ipaddress before insert
     occurred_at:   Mapped[datetime]               = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
->>>>>>> Stashed changes

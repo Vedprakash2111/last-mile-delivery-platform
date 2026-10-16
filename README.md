@@ -76,10 +76,14 @@ cp .env.example .env
 
 Open `.env` and fill in your team secrets:
 ```env
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.neon.tech/lastMileDB?sslmode=require
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.us-east-2.aws.neon.tech/neondb?ssl=require
 REDIS_URL=rediss://default:<password>@red-xyz.oregon-redis.render.com:6379
 JWT_SECRET_KEY=your_shared_team_jwt_secret_key_123
 ```
+
+Use the URL as provided by Neon with the `postgresql+asyncpg` scheme and
+`ssl=require`. To report safe connection and query timings without printing credentials, run
+`python scripts/verify_database_connection.py` after setting `DATABASE_URL`.
 
 ### Step 2: One-Click Environment Setup (Run Once)
 

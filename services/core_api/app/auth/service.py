@@ -1,13 +1,14 @@
 # Auth business logic: register, login, token refresh, forgot/reset password, token introspection.
-# All Postgres operations go through SQLAlchemy async sessions from app.database.connection.
+# All Postgres operations go through SQLAlchemy async sessions from services.core_api.app.database.connection.
 # No HTTP-layer concerns here — those live in router.py.
 
+import asyncio
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,8 +20,8 @@ from db_models.models import (
     UserRole_,
     UserRole,
 )
-from app.auth.email import send_reset_email
-from app.auth.schemas import (
+from services.core_api.app.auth.email import send_reset_email
+from services.core_api.app.auth.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
     MeResponse,
@@ -28,7 +29,7 @@ from app.auth.schemas import (
     ResetPasswordRequest,
     _InternalTokenPair,
 )
-from app.auth.security import (
+from services.core_api.app.auth.security import (
     create_access_token,
     decode_access_token,
     generate_refresh_token,
@@ -47,6 +48,8 @@ from app.auth.security import (
 
 MAX_FAILED_ATTEMPTS = 3
 LOCKOUT_MINUTES = 5
+INVALID_CREDENTIALS = "Invalid credentials."
+DUMMY_PASSWORD_HASH = "$2b$12$Nr1NHZbz8q83IaUP3NsZAeshxCWU9MpI8KcN/9vgy06kUcFyer5aS"
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +87,8 @@ async def register_user(
     payload: RegisterRequest,
     role: str,
     db: AsyncSession,
-) -> _InternalTokenPair:
-    """Create a new account with the given role, then auto-issue session tokens.
+) -> None:
+    """Create a new account with the given role without issuing a session.
 
     role is passed by the router based on which endpoint was called —
     it is never supplied by the client directly.
@@ -109,7 +112,7 @@ async def register_user(
     user = User(
         email=payload.email,
         phone=payload.phone,
-        password_hash=hash_password(payload.password),
+        password_hash=await asyncio.to_thread(hash_password, payload.password),
         full_name=payload.full_name,
     )
     db.add(user)
@@ -122,12 +125,7 @@ async def register_user(
         # Driver profile starts as 'pending' — an admin must approve before they go active.
         db.add(Driver(user_id=user.id))
 
-    # Eagerly load roles so _issue_tokens can read them without an extra query.
-    await db.refresh(user, ["roles"])
-
-    tokens = await _issue_tokens(user, db)
     await db.commit()
-    return tokens
 
 
 # ---------------------------------------------------------------------------
@@ -152,27 +150,25 @@ async def login_user(payload: LoginRequest, db: AsyncSession) -> _InternalTokenP
     user: Optional[User] = await db.scalar(stmt)
 
     if user is None:
-        raise ValueError(f"Invalid email or password. {MAX_FAILED_ATTEMPTS} attempt(s) left.")
+        await asyncio.to_thread(verify_password, payload.password, DUMMY_PASSWORD_HASH)
+        raise ValueError(INVALID_CREDENTIALS)
 
     if not user.is_active:
-        raise ValueError("Account is disabled. Contact support.")
+        await asyncio.to_thread(verify_password, payload.password, user.password_hash)
+        raise ValueError(INVALID_CREDENTIALS)
 
     # Lockout check.
     if user.locked_until and user.locked_until > datetime.now(timezone.utc):
-        raise ValueError(
-            f"Account locked due to too many failed attempts. "
-            f"Try again after {user.locked_until.strftime('%H:%M UTC')}."
-        )
+        await asyncio.to_thread(verify_password, payload.password, user.password_hash)
+        raise ValueError(INVALID_CREDENTIALS)
 
-    if not verify_password(payload.password, user.password_hash):
+    password_matches = await asyncio.to_thread(verify_password, payload.password, user.password_hash)
+    if not password_matches:
         user.failed_login_count += 1
-        attempts_left = MAX_FAILED_ATTEMPTS - user.failed_login_count
         if user.failed_login_count >= MAX_FAILED_ATTEMPTS:
             user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
-            await db.commit()
-            raise ValueError("Account locked due to too many failed attempts. Try again after 5 minutes.")
         await db.commit()
-        raise ValueError(f"Invalid email or password. {attempts_left} attempt{'s' if attempts_left != 1 else ''} left.")
+        raise ValueError(INVALID_CREDENTIALS)
 
     # Successful login — reset failure counter and record timestamp.
     user.failed_login_count = 0
@@ -193,20 +189,25 @@ async def refresh_tokens(raw_refresh_token: str, db: AsyncSession) -> _InternalT
     The raw token comes from the httpOnly refresh_token cookie — never from JSON body.
     """
     token_hash = hash_refresh_token(raw_refresh_token)
-    stmt = (
-        select(RefreshToken)
-        .where(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.now(timezone.utc),
-        )
-    )
+    stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
     stored: Optional[RefreshToken] = await db.scalar(stmt)
     if stored is None:
         raise ValueError("Refresh token is invalid or expired.")
 
+    now = datetime.now(timezone.utc)
+    if stored.revoked_at is not None:
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == stored.user_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        await db.commit()
+        raise ValueError("Refresh token is invalid or expired.")
+    if stored.expires_at <= now:
+        raise ValueError("Refresh token is invalid or expired.")
+
     # Revoke the old token immediately (single-use rotation).
-    stored.revoked_at = datetime.now(timezone.utc)
+    stored.revoked_at = now
 
     # Re-load user + roles.
     user_stmt = (
@@ -215,8 +216,9 @@ async def refresh_tokens(raw_refresh_token: str, db: AsyncSession) -> _InternalT
         .where(User.id == stored.user_id)
     )
     user: Optional[User] = await db.scalar(user_stmt)
-    if user is None or not user.is_active:
-        raise ValueError("Account not found or disabled.")
+    if user is None or not user.is_active or (user.locked_until is not None and user.locked_until > now):
+        await db.commit()
+        raise ValueError("Refresh token is invalid or expired.")
 
     tokens = await _issue_tokens(user, db)
     await db.commit()
@@ -295,7 +297,7 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession) -> Non
     if user is None or not user.is_active:
         raise ValueError("Account not found or disabled.")
 
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
     user.failed_login_count = 0
     user.locked_until = None
     stored.used_at = datetime.now(timezone.utc)
@@ -333,7 +335,7 @@ async def get_current_user(token: str, db: AsyncSession) -> MeResponse:
 
     stmt = (
         select(User)
-        .options(selectinload(User.roles))
+        .options(selectinload(User.roles), selectinload(User.driver_profile))
         .where(User.id == uuid_mod.UUID(user_id))
     )
     user: Optional[User] = await db.scalar(stmt)
@@ -348,4 +350,5 @@ async def get_current_user(token: str, db: AsyncSession) -> MeResponse:
         full_name=user.full_name,
         roles=roles,
         redirect_to=redirect_for_roles(roles),
+        driver_status=(user.driver_profile.status.value if user.driver_profile else None),
     )

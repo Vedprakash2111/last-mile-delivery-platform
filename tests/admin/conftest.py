@@ -28,7 +28,7 @@ os.environ.setdefault("TRUSTED_PROXY_HOPS", "0")
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy import select, text, delete
 
 from dotenv import load_dotenv
@@ -39,13 +39,13 @@ from db_models.models import (
     Merchant, MerchantMember, User, UserRole, UserRole_,
     Warehouse, WarehouseStaff,
 )
+from db_models.engine import make_engine
 from services.core_api.app.auth.security import create_access_token, hash_password
 from services.core_api.app.main import app
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/lastMileDB",
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if not DATABASE_URL.strip():
+    raise RuntimeError("DATABASE_URL is required to run admin integration tests")
 
 ADMIN_EMAIL = "seed_admin@test.internal"
 ADMIN_PASSWORD = "AdminPass123!"
@@ -65,7 +65,7 @@ def event_loop():
 
 @pytest.fixture(scope="session")
 def db_engine():
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    engine = make_engine(DATABASE_URL)
     yield engine
     asyncio.get_event_loop().run_until_complete(engine.dispose())
 

@@ -16,9 +16,7 @@ class CoreAPIConfig(BaseModel):
     env: str = os.getenv("ENV", "development")
 
     # --- Database ---
-    database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/lastMileDB")
-    postgres_pool_size: int = int(os.getenv("POSTGRES_POOL_SIZE", "2"))
-    postgres_max_overflow: int = int(os.getenv("POSTGRES_MAX_OVERFLOW", "3"))
+    database_url: str = os.getenv("DATABASE_URL", "")
 
     # --- Redis ---
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -54,6 +52,9 @@ class CoreAPIConfig(BaseModel):
 
 
 config = CoreAPIConfig()
+
+if not config.database_url.strip():
+    raise RuntimeError("DATABASE_URL is required for the Core API service")
 
 # ---------------------------------------------------------------------------
 # Fix 8: Startup deployment guard

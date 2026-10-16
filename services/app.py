@@ -29,16 +29,18 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from fastapi import FastAPI, Response
+from fastapi import Cookie, Depends, FastAPI, Request
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.control_tower.app.consumers.telemetry_consumer import run_telemetry_consumer
 from services.control_tower.app.main import app as control_tower_app
 from services.core_api.app.main import app as core_api_app
+from services.core_api.app.database.connection import get_db_session
+from services.core_api.app.panels import PANEL_ROOT, serve_panel, serve_panel_asset
 from services.driver_gateway.app.main import app as driver_gateway_app
-from services.routing_worker.app.main import start_consumer as start_routing_worker
-from services.simulator.app.main import start_simulator
+from services.routing_worker.app.main import main as start_routing_worker
+from services.simulator.app.main import main as start_simulator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("unified-app")
@@ -82,7 +84,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-FRONTEND_DIR = ROOT_DIR / "frontend"
+FRONTEND_DIR = ROOT_DIR / "frontend" / "public"
 
 
 @app.get("/", include_in_schema=False)
@@ -103,41 +105,32 @@ async def health_ready():
     return {"status": "ready"}
 
 
-# The public dashboards mount contains a retired admin placeholder. Admin UI
-# must only be served by Core API's database-authenticated shell route.
-@app.get("/dashboards/admin/{rest_of_path:path}", include_in_schema=False)
-async def block_public_admin_dashboard(rest_of_path: str) -> Response:
-    return Response(status_code=404)
-
-
-# Static frontend directories are exposed at stable root-relative paths for
-# runtime entry points. Frontend documents use Core API's `/static/...` mount
-# so their asset URLs also resolve when Core API is mounted under the gateway.
-app.mount("/shared", StaticFiles(directory=FRONTEND_DIR / "shared"), name="shared")
-app.mount("/home", StaticFiles(directory=FRONTEND_DIR / "home"), name="home")
-app.mount("/login/css", StaticFiles(directory=FRONTEND_DIR / "login" / "css"), name="login-css")
-app.mount("/login/js", StaticFiles(directory=FRONTEND_DIR / "login" / "js"), name="login-js")
-app.mount("/register/css", StaticFiles(directory=FRONTEND_DIR / "register" / "css"), name="register-css")
-app.mount("/register/js", StaticFiles(directory=FRONTEND_DIR / "register" / "js"), name="register-js")
-app.mount("/reset-password/js", StaticFiles(directory=FRONTEND_DIR / "reset-password" / "js"), name="reset-password-js")
-app.mount("/track/css", StaticFiles(directory=FRONTEND_DIR / "track" / "css"), name="track-css")
-app.mount("/track/js", StaticFiles(directory=FRONTEND_DIR / "track" / "js"), name="track-js")
-app.mount(
-    "/dashboards",
-    StaticFiles(directory=FRONTEND_DIR / "dashboards"),
-    name="dashboards",
-)
-app.mount(
-    "/driver-app",
-    StaticFiles(directory=FRONTEND_DIR / "driver-app", html=True),
-    name="driver-app",
-)
-
-
 # Mount service apps after gateway-owned routes. Core API stays mounted at `/`
 # so `/login`, `/auth/*`, `/orders/*`, `/staff/*`, and `/static/*` continue to
 # be handled by Core API and its routers.
 app.mount("/control-tower", control_tower_app)
+
+
+@app.get("/driver", include_in_schema=False)
+async def driver_panel(
+    request: Request,
+    access_token: str | None = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Route the exact panel path before the Driver Gateway's `/driver/*` mount."""
+    return await serve_panel("driver", PANEL_ROOT / "driver" / "index.html", request, access_token, db)
+
+
+@app.get("/driver/assets/{asset_path:path}", include_in_schema=False)
+async def driver_panel_asset(
+    asset_path: str,
+    request: Request,
+    access_token: str | None = Cookie(None),
+    db: AsyncSession = Depends(get_db_session),
+):
+    return await serve_panel_asset("driver", asset_path, request, access_token, db)
+
+
 app.mount("/driver", driver_gateway_app)
 app.mount("/", core_api_app)
 

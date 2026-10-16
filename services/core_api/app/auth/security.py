@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import bcrypt
 from jose import JWTError, jwt
 
-from app.config import config
+from services.core_api.app.config import config
 
 
 # ---------------------------------------------------------------------------
@@ -104,19 +104,21 @@ _ROLE_PRIORITY = ["admin", "dispatcher", "fleet_manager", "merchant", "driver", 
 # Where each role lands after login. Endpoints are canonical future paths —
 # frontend enforces these, backend only sends the advisory string.
 _ROLE_REDIRECT: Dict[str, str] = {
-    "admin":         "/staff/orders",
-    "dispatcher":    "/control-tower",
-    "fleet_manager": "/fleet/drivers",
-    "merchant":      "/orders",
-    "driver":        "/driver/route/active",
-    "customer":      "/orders/my",
+    "admin":         "/admin",
+    "dispatcher":    "/dispatcher",
+    "fleet_manager": "/fleet-manager",
+    "merchant":      "/merchant",
+    "driver":        "/driver",
+    "customer":      "/track",
 }
 
 
 def redirect_for_roles(roles: List[str]) -> str:
-    """Return the redirect path for the highest-priority role in the list."""
+    """Return the mapped path for the highest-priority role or raise if unmapped."""
+    unknown_roles = [role for role in roles if role not in _ROLE_REDIRECT]
+    if unknown_roles:
+        raise ValueError(f"No redirect mapping for role: {unknown_roles[0]}")
     for role in _ROLE_PRIORITY:
         if role in roles:
             return _ROLE_REDIRECT[role]
-    # Fallback — should not happen if every user has at least one role.
-    return "/"
+    raise ValueError("No redirect mapping for the user's roles.")

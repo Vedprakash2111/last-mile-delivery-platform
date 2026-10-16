@@ -46,6 +46,28 @@ def _uuid_safe(val: str) -> Optional[_uuid.UUID]:
     except (ValueError, AttributeError):
         return None
 
+
+def _order_search_filter(value: Optional[str]):
+    """Apply the documented OR search across public order references and recipients."""
+    if not value or len(value.strip()) < 2:
+        return None
+
+    query = value.strip()
+    search_terms = []
+    kind = classify_q(query)
+    if kind == "tracking_token":
+        search_terms.append(Order.tracking_token == query.upper())
+    if kind == "phone":
+        search_terms.append(Order.recipient_phone == query)
+
+    query_pattern = prepare_q(query)
+    if query_pattern:
+        search_terms.extend((
+            Order.merchant_order_ref.ilike(query_pattern),
+            Order.recipient_name.ilike(query_pattern),
+        ))
+    return or_(*search_terms)
+
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
@@ -114,21 +136,9 @@ async def list_orders(
         .join(Warehouse, Warehouse.id == Order.warehouse_id)
     )
 
-    if q and len(q.strip()) >= 2:
-        kind = classify_q(q.strip())
-        if kind == "tracking_token":
-            stmt = stmt.where(Order.tracking_token == q.strip().upper())
-        elif kind == "phone":
-            stmt = stmt.where(Order.recipient_phone == q.strip())
-        else:
-            q_pat = prepare_q(q)
-            if q_pat:
-                stmt = stmt.where(
-                    or_(
-                        Order.merchant_order_ref.ilike(q_pat),
-                        Order.recipient_name.ilike(q_pat),
-                    )
-                )
+    search_filter = _order_search_filter(q)
+    if search_filter is not None:
+        stmt = stmt.where(search_filter)
 
     if status:
         valid_statuses = []
@@ -271,18 +281,9 @@ async def order_counts(
 
     stmt = select(Order.status, func.count().label("cnt")).select_from(Order)
 
-    if q and len(q.strip()) >= 2:
-        kind = classify_q(q.strip())
-        if kind == "tracking_token":
-            stmt = stmt.where(Order.tracking_token == q.strip().upper())
-        elif kind == "phone":
-            stmt = stmt.where(Order.recipient_phone == q.strip())
-        else:
-            q_pat = prepare_q(q)
-            if q_pat:
-                stmt = stmt.where(
-                    or_(Order.merchant_order_ref.ilike(q_pat), Order.recipient_name.ilike(q_pat))
-                )
+    search_filter = _order_search_filter(q)
+    if search_filter is not None:
+        stmt = stmt.where(search_filter)
 
     if merchant_id:
         try:

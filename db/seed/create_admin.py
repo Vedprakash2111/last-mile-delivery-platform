@@ -22,16 +22,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from sqlalchemy import select, text
 
 from db_models.models import User, UserRole, UserRole_, Warehouse, Merchant, Driver, DriverStatus
+from db_models.engine import make_engine
 from services.core_api.app.auth.security import hash_password
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/lastMileDB",
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if not DATABASE_URL.strip():
+    raise RuntimeError("DATABASE_URL is required to seed the database")
 
 ADMIN_EMAIL = "seed_admin@test.internal"
 ADMIN_PASSWORD = "AdminPass123!"
@@ -107,7 +107,7 @@ async def seed(db: AsyncSession) -> None:
 
 
 async def main() -> None:
-    engine = create_async_engine(DATABASE_URL, echo=False)
+    engine = make_engine(DATABASE_URL)
     factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with factory() as session:
         await seed(session)

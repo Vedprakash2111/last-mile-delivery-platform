@@ -2,24 +2,11 @@
 # Async SQLAlchemy engine and session context for Core API (Neon DB Free Tier Auto-Suspend Optimized)
 
 from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-<<<<<<< Updated upstream
-from app.config import config
-=======
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from services.core_api.app.config import config
-from db_models.database_url import asyncpg_connection_settings
+from db_models.engine import make_engine
 
-database_url, ssl_connect_args = asyncpg_connection_settings(config.database_url)
->>>>>>> Stashed changes
-
-engine = create_async_engine(
-    database_url,
-    pool_size=config.postgres_pool_size,
-    max_overflow=config.postgres_max_overflow,
-    pool_recycle=300,
-    pool_pre_ping=True,
-    connect_args={"timeout": 10.0, "command_timeout": 5.0, **ssl_connect_args}
-)
+engine = make_engine(config.database_url)
 
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
