@@ -52,8 +52,8 @@ class _InternalTokenPair(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# SessionInfo — what the browser receives in the response body after
-# register / login / refresh. Tokens are NOT here; they are in httpOnly cookies.
+# SessionInfo — what the browser receives after login / refresh.
+# Tokens are NOT here; they are in httpOnly cookies.
 # ---------------------------------------------------------------------------
 
 class SessionInfo(BaseModel):
@@ -62,6 +62,10 @@ class SessionInfo(BaseModel):
     user_id: str
     roles: List[str]
     # Advisory: frontend should navigate here after login/register.
+    redirect_to: str
+
+
+class RegistrationResponse(BaseModel):
     redirect_to: str
 
 
@@ -120,3 +124,4 @@ class MeResponse(BaseModel):
     full_name: str
     roles: List[str]
     redirect_to: str
+    driver_status: Optional[str]

@@ -6,7 +6,7 @@ A high-performance, real-time last-mile logistics orchestration platform designe
 
 ## 🏗️ System Topology & Architecture
 
-The codebase is built as a **modular monolith**: one FastAPI runtime that mounts service-specific sub-apps and starts worker consumers as background async tasks.
+The codebase is built as a **modular monolith** — a single unified repository deployed as four independent microservice entrypoints plus an external synthetic traffic simulator:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -34,13 +34,13 @@ The codebase is built as a **modular monolith**: one FastAPI runtime that mounts
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Runtime Boundaries
+### Microservice Boundaries
 
-1. **`services/app.py`**: Unified launcher. Run from the repository root with `python services/app.py`.
-2. **`services/core_api`**: Mounted at `/`. Single entrypoint for Merchants and Staff. Geocodes dropoff addresses via Nominatim, assigns the nearest pickup facility using PostGIS KNN (`<->`), writes orders to Postgres, and publishes `order.created` to `orders_stream`.
-3. **`services/driver_gateway`**: Mounted at `/driver`. Internet-facing untrusted client edge. **Zero Postgres access.** Performs stateless JWT verification, dumps pings immediately to `driver_events_stream`, and streams POD photos to MinIO S3 storage.
-4. **`services/control_tower`**: Mounted at `/control-tower`. Low-latency live dashboard service. **Zero Postgres access.** Consumes telemetry streams, mutates hot driver state in Redis Hashes (`fleet:driver:active:{driver_id}`), streams live position deltas over WebSockets, and exposes dynamic rescue trigger endpoints.
-5. **`services/routing_worker` and `services/simulator`**: Started by the unified launcher as background async tasks when the web server boots.
+1. **`services/core_api`** (Port `8000`): Single entrypoint for Merchants and Staff. Geocodes dropoff addresses via Nominatim, assigns the nearest pickup facility using PostGIS KNN (`<->`), writes orders to Postgres, and publishes `order.created` to `orders_stream`.
+2. **`services/routing_worker`** (Background Worker): Isolated compute engine. Consumes `orders_stream` (`XREADGROUP`), batches orders per facility, solves CVRPTW using OSRM and VROOM, and commits routes to Postgres. Also processes terminal driver events (`delivery.completed` / `delivery.failed`) with idempotency checks against `processed_event`.
+3. **`services/control_tower`** (Port `8001`): Low-latency live dashboard service. **Zero Postgres access.** Consumes telemetry streams, mutates hot driver state in Redis Hashes (`fleet:driver:active:{driver_id}`), streams live position deltas over WebSockets, and exposes dynamic rescue trigger endpoints.
+4. **`services/driver_gateway`** (Port `8002`): Internet-facing untrusted client edge. **Zero Postgres access.** Performs stateless JWT verification, dumps pings immediately to `driver_events_stream`, and streams POD photos to MinIO S3 storage.
+5. **`services/simulator`**: External black-box client generator simulating virtual drivers and order traffic over public APIs.
 
 ---
 
@@ -76,10 +76,14 @@ cp .env.example .env
 
 Open `.env` and fill in your team secrets:
 ```env
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.neon.tech/lastMileDB?sslmode=require
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@ep-xyz.us-east-2.aws.neon.tech/neondb?ssl=require
 REDIS_URL=rediss://default:<password>@red-xyz.oregon-redis.render.com:6379
 JWT_SECRET_KEY=your_shared_team_jwt_secret_key_123
 ```
+
+Use the URL as provided by Neon with the `postgresql+asyncpg` scheme and
+`ssl=require`. To report safe connection and query timings without printing credentials, run
+`python scripts/verify_database_connection.py` after setting `DATABASE_URL`.
 
 ### Step 2: One-Click Environment Setup (Run Once)
 
@@ -103,26 +107,42 @@ Whenever you open a new terminal window to code:
 
 Verify installation:
 ```bash
-python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic; print('ALL DEPENDENCIES LOADED!')"
+python -c "import fastapi, uvicorn, sqlalchemy, asyncpg, redis, httpx, minio, pydantic, honcho; print('ALL DEPENDENCIES LOADED!')"
 ```
 
-### Step 4: Run the Unified Runtime
+### Step 4: Run All Services Locally
 
-From the root of the repository, run:
+Instead of opening 5 separate terminal windows, you can boot the entire platform with one command using the included `honcho` process manager. 
+
+From the root of the repository, simply run:
 ```bash
-python services/app.py
+honcho start -f Procfile.dev
 ```
 
-This starts one FastAPI server, mounts the API sub-apps, and launches the routing worker, telemetry consumer, and simulator loops as background async tasks. Press `Ctrl+C` to shut the runtime down.
+This will spin up all 5 isolated microservices (`core_api`, `control_tower`, `driver_gateway`, `routing_worker`, and `simulator`) concurrently in the background and multiplex their logs into your current terminal. Press `Ctrl+C` to cleanly shut them all down.
 
 ---
 
-## Cloud Deployment
+## 🐳 Docker & Cloud Deployment
+
+### Local Container Deployment (Docker Compose)
+
+Bring up infrastructure containers locally:
+```bash
+docker-compose --profile infra up -d
+```
+
+Bring up all services locally:
+```bash
+docker-compose --profile all up -d
+```
+
+### Render Deployment
 
 The repository includes a ready-to-use **`render.yaml`** Blueprint file for 1-click cloud deployment on Render:
 1. Connect your GitHub repository to [Render Dashboard](https://dashboard.render.com/).
 2. Create a new **Blueprint** instance.
-3. Render provisions one web service that runs `python services/app.py`.
+3. Render automatically provisions `core-api`, `routing-worker`, `control-tower`, `driver-gateway`, and `simulator`.
 
 ---
 

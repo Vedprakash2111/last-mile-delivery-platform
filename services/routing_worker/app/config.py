@@ -9,11 +9,12 @@ load_dotenv()
 
 class RoutingWorkerConfig(BaseModel):
     """Configuration properties for Routing Worker service."""
-    database_url: str = os.getenv("DATABASE_URL")
-    postgres_pool_size: int = int(os.getenv("POSTGRES_POOL_SIZE", "2"))
-    postgres_max_overflow: int = int(os.getenv("POSTGRES_MAX_OVERFLOW", "3"))
+    database_url: str = os.getenv("DATABASE_URL", "")
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     osrm_url: str = os.getenv("OSRM_URL", "http://localhost:5000")
     vroom_url: str = os.getenv("VROOM_URL", "http://localhost:3000")
 
 config = RoutingWorkerConfig()
+
+if not config.database_url.strip():
+    raise RuntimeError("DATABASE_URL is required for the Routing Worker service")

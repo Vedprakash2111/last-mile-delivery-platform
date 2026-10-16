@@ -18,7 +18,7 @@ async def send_reset_email(to_address: str, reset_token: str) -> None:
     logged and re-raised so the caller can return a 500 rather than silently
     dropping the email.
     """
-    reset_url = f"{config.public_base_url}/auth/reset-password?token={reset_token}"
+    reset_url = f"{config.public_base_url}/reset-password?token={reset_token}"
 
     msg = EmailMessage()
     msg["Subject"] = "Reset your Last-Mile Delivery password"
