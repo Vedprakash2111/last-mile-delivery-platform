@@ -7,14 +7,17 @@ from pathlib import Path
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from slowapi.errors import RateLimitExceeded
 
 from services.core_api.app.auth.router import router as auth_router
+from services.core_api.app.config import config
 from services.core_api.app.orders.router import router as orders_router
 from services.core_api.app.customer.router import router as customer_router
+from services.core_api.app.driver.router import router as driver_router
 from services.core_api.app.tracking.router import limiter as tracking_limiter
 from services.core_api.app.tracking.router import router as tracking_router
 from services.core_api.app.staff.router import router as staff_router
@@ -44,6 +47,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Core API Service", version="1.0.0", lifespan=lifespan)
+if config.driver_app_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.driver_app_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "PATCH", "POST", "PUT"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 app.state.limiter = tracking_limiter
 frontend_dir = Path(__file__).resolve().parents[3] / "frontend"
 
@@ -121,6 +132,7 @@ async def health():
 app.include_router(home_router, tags=["Home"])
 app.include_router(tracking_router)
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+app.include_router(driver_router, prefix="/driver", tags=["Driver"])
 app.include_router(orders_router, prefix="/orders", tags=["Orders"])
 app.include_router(customer_router)
 app.include_router(staff_router, prefix="/staff", tags=["Staff"])

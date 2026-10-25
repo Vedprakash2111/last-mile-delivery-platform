@@ -42,10 +42,10 @@ Forgot-password requests use a per-user 60-second Redis email cooldown. Admin se
 | Method | Path | Access | Current behavior |
 | --- | --- | --- | --- |
 | POST | `/orders/` | Unauthenticated integration/guest order | Accepts `seller_id`, recipient name/phone, delivery address, weight/volume, and an optional paired delivery window. Requires an active seller; geocodes through configured Nominatim; writes an unclaimed `placed` order with `warehouse_id = null` and its initial event in one transaction; then publishes `order.created`. It has no customer idempotency key or customer rate limit. |
-| GET | `/staff/orders` | No route-level auth dependency | Returns an empty array. Database listing is TODO. |
-| POST | `/staff/orders/{order_id}/unstick` | No route-level auth dependency | Returns `{order_id, status: "reset"}`. Reset and republish are TODO. |
+| GET | `/staff/orders` | Admin access token | Lists orders with optional `status` (repeatable), `merchant_id`, `warehouse_id`, `q`, `from`, `to`, `limit` (default 50, max 100), and `offset` filters. Results include order, merchant, warehouse, recipient, status, and timestamp fields. |
+| POST | `/staff/orders/{order_id}/unstick` | Admin access token and CSRF origin/content-type validation | Re-publishes an order as `order.created` only when its status is `placed` and both `created_at` and `updated_at` exceed the configured `STALE_PENDING_HOURS` age. It preserves status, updates `updated_at` to suppress immediate repeat requests, and returns `{order_id, status: "republished", order_status: "placed"}`. Unknown orders return 404; ineligible/recently re-published orders return 409; Redis publish failures return 503. |
 
-These route dependencies are the current code contract. Do not infer authorization that is not attached in code.
+These staff endpoints are admin-only; state-changing requests require a valid Origin/Referer and JSON content type.
 
 ### Customer API and pages
 
@@ -122,6 +122,16 @@ In the unified app, Control Tower is mounted at `/control-tower`, so these paths
 
 ## 3. Driver Gateway API
 
+The current mobile PWA also uses the authenticated Core API driver routes
+proxied by Gateway, plus `POST /driver/pod` for MinIO evidence uploads. The
+complete current route, scan, upload, and event contract is documented in
+[`driver-app.md`](./driver-app.md).
+
+The PWA may authenticate event ingestion with the signed-in `access_token`
+HttpOnly cookie; non-browser clients may use a Bearer JWT. Gateway acceptance
+means Redis append only. It does not persist delivery outcomes, PODs, scans, or
+returns in Postgres.
+
 | Method | Path | Access | Current behavior |
 | --- | --- | --- | --- |
 | POST | `/driver/events` | Driver client; Bearer HS256 JWT with `driver` role | Validates driver event payloads and appends them to `driver_events_stream`; driver identity comes from the token. Includes `route.started` when a driver starts an assigned route (`out_for_delivery`). |
@@ -142,14 +152,14 @@ These routes belong to `services/app.py`, not to the service-local APIs.
 | GET | `/health/live` | Process liveness. |
 | GET | `/health/ready` | Unified-app response; not the Core API's dependency-verified readiness check. |
 
-## 5. Planned processing contracts (not yet operational)
+## 5. Processing contracts (mixed implemented and planned)
 
-The architecture intends the following flow; these are implementation targets, not a promise that current endpoints complete the work:
+The following distinguishes implemented processing from remaining platform work:
 
 1. **Implemented:** `POST /orders/` and `POST /api/users/{user_id}/request` validate order data, geocode the delivery address, persist a `placed` order with no warehouse and its initial `order_events` row, then publish `order.created` to `orders_stream`. The merchant handoff later selects a warehouse; its eligibility policy remains unresolved. The end-to-end lifecycle in `docs/end-to-end-system-flow.md` is authoritative for stage ordering.
 2. Routing Worker consumes orders through a Redis consumer group, obtains travel costs from OSRM, sends routing/capacity/time-window input to VROOM, persists routes and stops, publishes route updates, and acknowledges an order only after its database write commits.
-3. Driver Gateway authenticates the driver and publishes validated location, arrival, completion, failure, and `route.started` events to `driver_events_stream`. `route.published` includes `driver_name` and `vehicle_registration`. A failed delivery leaves the order at `attempt_failed` until a dispatcher manually re-queues it.
+3. **Implemented for the Driver PWA:** Gateway authenticates drivers, validates location, arrival, package-scan, pickup, completion, and failure events, and publishes them to `driver_events_stream`. POD/exception evidence uploads are authorized by Core API and stored in MinIO before their object key is published. Scan/pickup records and evidence references are not persisted in Postgres under the current schema.
 4. Control Tower consumes live driver events into Redis Hash state and broadcasts changed state to `/ws/fleet` clients. Rescue requests should ask Routing Worker to re-solve only the affected vehicle's remaining stops.
-5. Routing Worker persists terminal delivery attempts and order state with `processed_event` idempotency before acknowledging terminal events.
+5. **Implemented:** Routing Worker validates stop ownership, updates `route_stops`, `orders`, `order_events`, and route/driver state for arrival and terminal outcomes, commits, then acknowledges. Terminal state transitions prevent duplicate status-history writes on replay. The authoritative schema has no `delivery_attempt` or `processed_event` table, so event UUIDs are not durably deduplicated and evidence object keys are not retained in Postgres.
 
 Shared status and event enum definitions are in `db_models/models.py` and `streaming/schemas/`; `schema.sql` is authoritative for database types and constraints.

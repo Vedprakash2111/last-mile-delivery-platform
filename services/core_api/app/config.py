@@ -45,6 +45,13 @@ class CoreAPIConfig(BaseModel):
     # --- Cookies ---
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
+    # --- Browser driver app ---
+    driver_app_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv("DRIVER_APP_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+
     # --- Proxy trust (Fix 4: rightmost XFF hop) ---
     # Number of trusted reverse-proxy hops between the internet and this service.
     # On Render: 1 (Render's load balancer). In tests: 0 or 1 depending on setup.
