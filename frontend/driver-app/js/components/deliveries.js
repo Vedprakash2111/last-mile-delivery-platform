@@ -54,11 +54,10 @@ export function deliveriesView() {
     });
     return `
         <section class="page-heading">
-            <p class="eyebrow">${state.previewMode ? "LOCAL PREVIEW" : "DRIVER MANIFEST"}</p>
+            <p class="eyebrow">DRIVER MANIFEST</p>
             <h1>Deliveries</h1>
             <p>${state.route ? `${escapeHTML(state.route.title)} · current assigned route` : "Current route stops and delivery outcomes."}</p>
         </section>
-        ${state.previewMode ? `<div class="notice notice-warm"><span>i</span><div><strong>Preview only</strong><p>This sample manifest is synthetic and cannot be updated.</p></div></div>` : ""}
         ${state.route ? `
             <section class="delivery-summary-card">
                 <div class="delivery-summary-heading"><div><p class="eyebrow">ROUTE PROGRESS</p><h2>${escapeHTML(state.route.title)}</h2></div><button class="text-button" data-tab="Route">Open route <span>→</span></button></div>
@@ -78,7 +77,7 @@ export function deliveriesView() {
                     : `<div class="empty-state empty-state-small"><span>✓</span><h3>No ${activeFilter.toLowerCase()} deliveries</h3><p>Try another filter to see the route manifest.</p></div>`}
             </div>
         ` : `
-            <div class="empty-state delivery-empty"><span>▤</span><h3>No active delivery manifest</h3><p>${state.previewMode ? "The sample route is available in Routes, but preview actions are disabled." : "Assigned route stops will appear here when a route is in progress."}</p><button class="button button-primary" data-tab="Routes">View routes <span>→</span></button></div>
+            <div class="empty-state delivery-empty"><span>▤</span><h3>No active delivery manifest</h3><p>Assigned route stops will appear here when a route is in progress.</p><button class="button button-primary" data-tab="Routes">View routes <span>→</span></button></div>
         `}
         <section class="notice notice-warm delivery-history-note">
             <span>i</span><div><strong>Past delivery history</strong><p>The driver API currently returns planned and in-progress routes only. Historical completed, failed, or returned orders are not available here.</p></div>

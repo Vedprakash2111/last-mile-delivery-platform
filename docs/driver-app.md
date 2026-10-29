@@ -1,6 +1,6 @@
 # Driver App
 
-The Driver App is a mobile-friendly Progressive Web App (PWA) for driver sign-in, profile and vehicle management, parcel scanning, assigned-route execution, proof capture, and delivery outcomes. This document describes the implemented system, how to run it, and the boundaries of the current workflows.
+The Driver App is a mobile-friendly Progressive Web App (PWA) for profile and vehicle management, parcel scanning, assigned-route execution, proof capture, and delivery outcomes. Driver authentication is centralized in Core API; the PWA has no sign-in, registration, or sign-out screens. This document describes the implemented system, how to run it, and the boundaries of the current workflows.
 
 ## At a glance
 
@@ -8,7 +8,7 @@ The Driver App is a mobile-friendly Progressive Web App (PWA) for driver sign-in
 | --- | --- | --- |
 | PWA | Mobile UI, account and route screens, offline app shell, local event outbox | `frontend/driver-app/` |
 | Driver Gateway | Serves the PWA, proxies allowlisted driver APIs, validates and publishes driver events | `services/driver_gateway/` |
-| Core API | Driver authentication, authorization, profile, vehicle, and route operations | `services/core_api/app/driver/` and `services/core_api/app/auth/` |
+| Core API | Central driver authentication and authorization, profile, vehicle, and route operations | `services/core_api/app/driver/` and `services/core_api/app/auth/` |
 | PostgreSQL/PostGIS | Authoritative persistent application data and constraints | [`schema.sql`](../schema.sql), accessed by Core API |
 | Redis Streams | Transport for accepted driver events | `driver_events_stream`, accessed through `streaming/` |
 
@@ -26,7 +26,7 @@ The mobile-first UI covers the requested driver workflow through the existing HT
 
 | Design area | Current app surface |
 | --- | --- |
-| Home dashboard | Home tab: driver/shift status, assigned route, network state, queued-sync status, daily stop counts, next route action, and an earnings-data availability preview. |
+| Home dashboard | Home tab: driver status, assigned route, network state, queued-sync status, daily stop counts, next route action, and an earnings-data availability preview. |
 | Routes and acceptance | Routes tab and route-details dialog: assigned planned routes can be reviewed with distance, duration, assigned vehicle, and a map preview; routes can be started when driver status and vehicle match. |
 | Deliveries | Deliveries tab: active route manifest, per-stop pending/scanned/arrived/delivered/failed/skipped statuses, summary counts, and filters. Historical completed/failed/returned orders are unavailable because the API lists only planned and in-progress routes. |
 | Earnings | Secondary Earnings page, linked from Deliveries and Profile: delivered-stop context and sync status. Payout amounts are explicitly unavailable because no earnings API or schema-backed payout data exists. |
@@ -40,7 +40,7 @@ The dashboard progress card reports delivered, total daily stops, and failed sto
 
 Some Figma concepts cannot be connected to the current backend contract and are intentionally not presented as working features:
 
-- Login uses the existing email/phone and password contract; OTP login, KYC submission, and document verification endpoints are not available.
+- Authentication is provided by the centralized Core API session. The PWA does not collect credentials, register accounts, or log out; OTP login, KYC submission, and document verification endpoints are not available.
 - Driver availability is staff-managed. The top-bar online/offline indicator reports browser network connectivity; shift start/end, vehicle inspection, fuel/charging records, and a driver availability toggle are not available.
 - The route API returns routes already assigned to the driver, not offers. Route accept/reject, payout estimates, parcel-capacity validation, and stop reordering are not part of that contract.
 - Earnings and payout history are not available through the driver API or authoritative schema.
@@ -56,21 +56,23 @@ These are backend/API compatibility gaps, not frontend fallbacks. Do not add syn
 The PWA is implemented with HTML, CSS, and JavaScript ES modules:
 
 - `frontend/driver-app/index.html` is the entry page; `css/style.css` contains app styling.
-- `js/app.js` initializes storage, restores an eligible session, and wires UI actions.
+- `js/app.js` initializes storage, restores the centrally managed Core API session, and wires UI actions.
 - `js/components/` contains the account, navigation, route, dashboard, activity, barcode scanner, and proof-capture views.
-- `js/services/account.js` handles login, registration, profile, vehicle, and account actions.
+- `js/services/account.js` handles profile, vehicle, and account actions; it does not implement login, registration, or logout.
 - `js/services/driver-events.js` handles route actions, location collection, and event synchronization.
-- `js/api.js` sends same-origin requests to Gateway and handles session refresh.
+- `js/api.js` sends same-origin requests to Gateway and refreshes the central Core API session when needed.
 - `js/storage.js` manages IndexedDB work state and the ordered event outbox.
 - `manifest.webmanifest` and `sw.js` provide installability and offline app-shell caching.
 
-The browser uses HttpOnly cookies rather than reading authentication tokens in JavaScript. IndexedDB stores supported app state and queues events before attempting network sync. Queued events are replayed sequentially and bound to the driver account that created them.
+The browser uses the central Core API's HttpOnly cookies rather than reading authentication tokens in JavaScript. The PWA verifies the current driver's identity and role but does not manage credentials or session termination. Central authentication remains mandatory: Core API and Gateway continue to enforce identity and driver authorization for database-backed operations and event ingestion. IndexedDB stores supported app state and queues events before attempting network sync. Queued events are replayed sequentially and bound to the driver account that created them.
 
-The app has no server-backed demo mode: route, profile, vehicle, and delivery data are loaded for the signed-in driver through Driver Gateway and Core API. On localhost only, the sign-in screen offers an optional read-only UI preview using synthetic data. Preview mode blocks API requests and driver actions; it does not authenticate, read Neon data, or write to the server. Previously saved sample routes and demo-only queued actions are removed from this device on startup; real queued driver actions are preserved.
+Route, profile, vehicle, and delivery data are loaded only for the driver with an active centralized Core API session through Driver Gateway and Core API. The app does not include synthetic sample routes or a local preview mode. Previously saved sample routes and demo-only queued actions are removed from this device on startup; real queued driver actions are preserved.
+
+On startup, the PWA checks `GET /auth/me` through Driver Gateway, confirms the `driver` role, and then loads the driver's profile and routes. If there is no valid driver session, it shows a session-required message and a retry action; complete centralized sign-in first, then retry. The app never reads or stores authentication tokens in JavaScript. The central sign-in must establish cookies usable by the Driver Gateway origin (for example, by using the Gateway's Core API auth proxy or a correctly scoped shared cookie domain). A cookie scoped only to a separate Core API host will not be sent to Gateway. The Driver App URL is not itself a hosted sign-in page and no redirect to a separate login page is configured.
 
 ### Route maps
 
-An active route displays an embedded Google Maps directions map when a Google Maps Embed API key is configured in Profile → Sync settings. The map uses the warehouse address as its origin and the route stops in sequence as its destination and waypoints. The key is stored only in that browser's local settings; it is a public browser key, not a secret. Restrict it to the app's website referrer and enable only Maps Embed API in Google Cloud. A Google Cloud billing-enabled project is required. Without a key, the app still offers a direct full-route link to Google Maps. Synthetic preview/sample addresses are not used for navigation.
+An active route displays an embedded Google Maps directions map when a Google Maps Embed API key is configured in Profile → Sync settings. The map uses the warehouse address as its origin and the route stops in sequence as its destination and waypoints. The key is stored only in that browser's local settings; it is a public browser key, not a secret. Restrict it to the app's website referrer and enable only Maps Embed API in Google Cloud. A Google Cloud billing-enabled project is required. Without a key, the app still offers a direct full-route link to Google Maps. Directions use real addresses from the authenticated driver's assigned route; synthetic data is not supplied by the app.
 
 ## Backend and persistence
 
@@ -86,21 +88,20 @@ Routing Worker's terminal-event consumer validates route ownership and updates `
 
 ## Authentication and API
 
-All paths below are called on Driver Gateway. Authentication and driver self-service requests are proxied to Core API; event ingestion is handled by Gateway.
+All paths below are called on Driver Gateway. Central authentication and driver self-service requests are proxied to Core API; event ingestion is handled by Gateway.
 
-### Authentication
+### Central authentication
 
-| Method | Path | Behavior |
-| --- | --- | --- |
-| `POST` | `/auth/register/driver` | Creates a driver account; the user signs in separately. |
-| `POST` | `/auth/login` | Authenticates credentials and sets access and refresh HttpOnly cookies. |
-| `GET` | `/auth/me` | Returns the signed-in identity and roles. |
-| `POST` | `/auth/refresh` | Rotates the refresh session and sets updated cookies. |
-| `POST` | `/auth/logout` | Clears the authentication cookies. |
-| `POST` | `/auth/forgot-password` | Starts the existing password-reset flow. |
-| `POST` | `/auth/reset-password` | Completes the existing password-reset flow. |
+Core API owns authentication. The Driver App does not expose login, registration, password-reset, or logout forms and does not call credential-submission or session-termination endpoints. Its session integration is limited to:
 
-The access cookie is short-lived and scoped to `/`; the refresh cookie is scoped to `/auth`. Cookies use `SameSite=Lax`; `COOKIE_SECURE` must be enabled when served over HTTPS.
+| Method | Path | Caller | Behavior |
+| --- | --- | --- | --- |
+| `GET` | `/auth/me` | Driver App via Gateway | Validates the current central session and returns identity and roles. The app requires the `driver` role. |
+| `POST` | `/auth/refresh` | Driver App via Gateway, automatically after an eligible `401` | Rotates the central refresh session and sets updated HttpOnly cookies. |
+
+Other central clients may use Core API's registration, login, logout, and password-reset endpoints; those are not Driver App screens or responsibilities. The Gateway allowlists and proxies the central auth endpoints to Core API.
+
+The access cookie is short-lived and scoped to `/`; the refresh cookie is scoped to `/auth`. Cookies use `SameSite=Lax`; `COOKIE_SECURE` must be enabled when served over HTTPS. The browser must send the central session cookies to the Driver Gateway origin as well as Core API; do not expose tokens to JavaScript or remove Core API authorization.
 
 ### Driver self-service
 
@@ -138,7 +139,7 @@ Every event includes `event_id`, `driver_id`, and `timestamp`; Gateway validates
 
 ## Data flow
 
-1. **Sign in and load route:** the PWA authenticates through Gateway. Core API sets HttpOnly cookies and returns the driver's assigned route manifest.
+1. **Load the central session and route:** centralized authentication establishes the Core API HttpOnly session. The PWA verifies it through Gateway, confirms the driver role, and loads the driver's assigned route manifest. If the session is missing, the PWA waits for central sign-in and lets the driver retry.
 2. **Scan at pickup and stop:** camera scanning uses `BarcodeDetector` where available, with manual entry as fallback. Online scans are checked by Core API against the driver's active route. Scans and pickup confirmation are queued and sent to Redis; scan records and pickup state are not persisted in Postgres.
 3. **Navigate and check in:** the route shows ordered addresses, recipient phone links, time windows, and a map handoff link. The driver explicitly requests GPS at arrival. Routing Worker records `arrived_at`; no geofence radius is configured.
 4. **Capture proof:** the driver selects a photo, signature, or recipient name. The evidence action is written to IndexedDB first. When synced, Gateway verifies the open stop through Core API, uploads evidence to private MinIO storage, then publishes the object key to Redis.
@@ -177,7 +178,7 @@ Every event includes `event_id`, `driver_id`, and `timestamp`; Gateway validates
    honcho start -f Procfile.dev
    ```
 
-4. Open `http://127.0.0.1:8002/` in a browser. The process group includes Core API, which Gateway needs for login and driver self-service requests. Other services and external integrations also require their configured dependencies.
+4. Ensure centralized authentication has established a Core API session usable by the Driver Gateway origin, then open `http://127.0.0.1:8002/` in a browser. The process group includes Core API, which Gateway needs for session validation and driver self-service requests. Other services and external integrations also require their configured dependencies.
 
 For Linux/macOS setup and the full platform requirements, use the root [`README.md`](../README.md). Do not commit `.env` or production credentials.
 

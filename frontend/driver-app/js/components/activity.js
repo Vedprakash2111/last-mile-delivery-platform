@@ -2,19 +2,14 @@ import { state, escapeHTML, formatCount } from "../state.js";
 import { outboxTransaction } from "../storage.js";
 
 export function activityView() {
-    if (state.previewMode) {
-        return `<section class="page-heading"><p class="eyebrow">LOCAL PREVIEW</p><h1>Activity</h1><p>Activity sync is unavailable in this synthetic-data preview.</p></section>
-            <div class="empty-state"><span>↻</span><h3>No live activity loaded</h3><p>No database or device activity is read in local preview mode.</p></div>`;
-    }
     return `<section class="page-heading"><p class="eyebrow">YOUR DAY, IN ORDER</p><h1>Activity</h1><p>Local actions and sync status for this device.</p></section>
         <section class="activity-summary"><span class="activity-summary-icon">↻</span><div><strong>${formatCount(state.outboxCount, "item")} waiting to sync</strong><small>Saved to the offline queue first.</small></div><button class="button button-secondary button-small" data-action="sync">Sync now</button></section>
         <div class="section-heading"><div><p class="eyebrow">RECENT</p><h3>On this device</h3></div></div>
         <div id="activity-list" class="activity-list"><div class="loading-line">Loading activity…</div></div>
-        <div class="notice notice-warm"><span>i</span><div><strong>About syncing</strong><p>Queued events replay in order using your signed-in session. Each queued action is bound to its driver account and will not be sent under another driver's session.</p></div></div>`;
+        <div class="notice notice-warm"><span>i</span><div><strong>About syncing</strong><p>Queued events replay in order using your central driver session. Each queued action is bound to its driver account and will not be sent under another driver's session.</p></div></div>`;
 }
 
 export async function loadActivity() {
-    if (state.previewMode) return;
     const list = document.getElementById("activity-list");
     if (!list) return;
     try {

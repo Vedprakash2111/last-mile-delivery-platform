@@ -1,47 +1,8 @@
-import { state, localPreviewRoutes, notify, showError, saveSettings } from "../state.js";
+import { state, notify, saveSettings } from "../state.js";
 import { clearWorkState, persistWorkState } from "../storage.js";
 import { apiRequest, normalizeDriverRoute } from "../api.js";
 import { render } from "../views.js";
 import { syncOutbox } from "./driver-events.js";
-
-export function enterLocalPreview() {
-    if (!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) {
-        showError("Local preview is available only when running the app on this device.");
-        return;
-    }
-    state.previewMode = true;
-    state.loginMessage = "";
-    state.identity = { full_name: "Preview Driver", email: "preview@example.test", driver_status: "available" };
-    state.driverUserId = null;
-    state.driverProfile = { status: "available", vehicle: null };
-    state.driverRoutes = localPreviewRoutes;
-    state.vehicles = [];
-    state.route = null;
-    state.pickedUp = false;
-    state.pickupScanned = new Set();
-    state.stopScanned = new Set();
-    state.completed = new Set();
-    state.failed = new Set();
-    state.arrived = new Set();
-    state.view = "app";
-    state.tab = "Today";
-    render();
-    notify("Local preview only: synthetic data, no database access.", "info");
-}
-
-export function exitLocalPreview() {
-    if (!state.previewMode) return;
-    state.previewMode = false;
-    state.loginMessage = "";
-    state.identity = null;
-    state.driverUserId = null;
-    state.driverProfile = null;
-    state.driverRoutes = [];
-    state.vehicles = [];
-    state.route = null;
-    state.view = "login";
-    render();
-}
 
 export async function loadDriverAccount(identity) {
     const [profile, routes, vehicles] = await Promise.all([
@@ -97,72 +58,6 @@ export async function searchVehicles() {
     }
 }
 
-export async function login(form) {
-    const values = new FormData(form);
-    const identifier = String(values.get("identifier")).trim();
-    const password = String(values.get("password"));
-    const payload = { password };
-    if (identifier.includes("@")) payload.email = identifier;
-    else payload.phone = identifier;
-    try {
-        state.loginMessage = "";
-        const session = await apiRequest("/auth/login", { method: "POST", body: JSON.stringify(payload) });
-        if (!session.roles?.includes("driver")) throw new Error("This account does not have a driver role.");
-        const identity = await apiRequest("/auth/me");
-        await loadDriverAccount(identity);
-        state.previewMode = false;
-        state.view = "app";
-        state.tab = "Today";
-        sessionStorage.setItem("driver.hasSession", "true");
-        render();
-        notify("You're signed in. Have a great shift.", "success");
-        await syncOutbox({ quiet: true });
-    } catch (error) {
-        showError(error.message || "Could not sign in. Check your details and connection.");
-    }
-}
-
-export async function register(form) {
-    const values = new FormData(form);
-    const payload = {
-        full_name: String(values.get("full_name")).trim(),
-        email: String(values.get("email")).trim(),
-        password: String(values.get("password"))
-    };
-    const phone = String(values.get("phone")).trim();
-    if (phone) payload.phone = phone;
-    try {
-        await apiRequest("/auth/register/driver", { method: "POST", body: JSON.stringify(payload) });
-        state.view = "login";
-        render();
-        notify("Account created. Sign in to continue.", "success");
-    } catch (error) {
-        showError(error.message || "Could not create the driver account.");
-    }
-}
-
-export async function signOut() {
-    try {
-        await apiRequest("/auth/logout", { method: "POST", body: "{}" });
-    } catch (error) {
-        console.error("Could not revoke the server session.", error);
-        notify(`Signed out locally; server logout failed: ${error.message}`, "error");
-    }
-    state.identity = null;
-    state.driverUserId = null;
-    state.route = null;
-    state.completed = new Set();
-    state.failed = new Set();
-    state.arrived = new Set();
-    state.pickupScanned = new Set();
-    state.stopScanned = new Set();
-    state.pickedUp = false;
-    await clearWorkState();
-    state.view = "login";
-    sessionStorage.removeItem("driver.hasSession");
-    render();
-}
-
 export async function finishRoute() {
     if (!state.route) return;
     if (state.outboxCount) await syncOutbox({ quiet: true });
@@ -192,17 +87,6 @@ export async function finishRoute() {
     state.tab = "Today";
     render();
     notify("Route completion confirmed.", "success");
-}
-
-export function saveGatewayUrl() {
-    const input = document.getElementById("driver-gateway-url");
-    if (!input?.value.trim()) {
-        showError("Enter the Driver Gateway base URL.");
-        return;
-    }
-    state.settings.driverGatewayBase = input.value.trim().replace(/\/+$/, "");
-    saveSettings();
-    notify("Driver Gateway URL saved on this device.", "success");
 }
 
 export async function saveProfileSettings() {

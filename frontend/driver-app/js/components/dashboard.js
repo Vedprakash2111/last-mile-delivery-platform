@@ -13,13 +13,12 @@ export function todayView() {
     const availableRoutes = state.driverRoutes.filter((route) => route.status === "planned");
     return `
         <section class="welcome-row"><div><p class="eyebrow">${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }).toUpperCase()}</p><h1>${greeting()}</h1></div><span class="weather-mark" aria-label="Ready for the day">✳</span></section>
-        ${state.previewMode ? `<div class="notice notice-warm"><span>i</span><div><strong>Local preview only</strong><p>Synthetic sample data. No Neon data is loaded and app actions are disabled.</p></div></div>` : ""}
         ${!state.identity?.driver_status ? `<div class="notice notice-warm"><span>!</span><div><strong>Driver profile is not linked yet</strong><p>Route and vehicle details are unavailable for this account.</p></div></div>` : ""}
         <section class="shift-card">
-            <div class="shift-copy"><span class="shift-icon">↗</span><div><p class="eyebrow">YOUR SHIFT</p><h2>${state.route ? "On the road" : "Ready when you are"}</h2></div></div>
-            <p>${state.route ? `${openStops} stops left on your active route.` : "Pick up a route that fits your day."}</p>
+            <div class="shift-copy"><span class="shift-icon">↗</span><div><p class="eyebrow">DRIVER STATUS</p><h2>${state.route ? "Route in progress" : "No active route"}</h2></div></div>
+            <p>${state.route ? `${openStops} stops left on your active route.` : "Review routes assigned to your driver account."}</p>
             <div class="shift-bottom">
-                <span class="shift-state"><i></i>${state.route ? "ROUTE ACTIVE" : "SHIFT STATUS"}</span>
+                <span class="shift-state"><i></i>${state.route ? "ROUTE ACTIVE" : "ACCOUNT STATUS"}</span>
                 <span>${state.identity?.driver_status ? escapeHTML(state.identity.driver_status.replaceAll("_", " ").toUpperCase()) : "PROFILE STATUS N/A"}</span>
                 ${state.driverProfile?.vehicle?.registration_number
                     ? `<span>VEHICLE · ${escapeHTML(state.driverProfile.vehicle.registration_number)}</span>`
@@ -51,9 +50,9 @@ export function todayView() {
                 ? `<div class="opportunity-list">${availableRoutes.map((route) => routeSummary(route, "Review")).join("")}</div>`
                 : `<div class="empty-state empty-state-small"><span>↗</span><h3>No planned routes</h3><p>Routes assigned to your driver profile will appear here.</p></div>`}
         `}
-        ${!state.previewMode ? `<section class="location-strip">
+        <section class="location-strip">
             <span class="location-icon">⌖</span><div><strong>Location services</strong><small>${escapeHTML(state.locationStatus)}</small></div><button class="text-button" data-action="start-location">${state.location ? "Refresh" : "Enable"} <span>→</span></button>
-        </section>` : ""}
+        </section>
         <section class="home-earnings-preview">
             <div><p class="eyebrow">EARNINGS PREVIEW</p><strong>Payout data unavailable</strong><small>${completedStops} delivered ${completedStops === 1 ? "stop" : "stops"} · amount not provided</small></div>
             <button class="text-button" data-tab="Earnings">Details <span>→</span></button>

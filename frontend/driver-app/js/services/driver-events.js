@@ -1,4 +1,4 @@
-import { state, escapeHTML, formatCount, notify, showError } from "../state.js";
+import { state, escapeHTML, formatCount, notify } from "../state.js";
 import {
     enqueueOutboxRecord,
     outboxTransaction,
@@ -16,9 +16,6 @@ export function eventLocation() {
 }
 
 export async function queueEvent(eventType, details = {}, attachment = null) {
-    if (state.previewMode) {
-        throw new Error("Driver actions are disabled in local preview mode.");
-    }
     const event_id = crypto.randomUUID();
     const timestamp = new Date().toISOString();
     const record = {
@@ -81,10 +78,6 @@ export async function recordTelemetry(eventType, details = {}, attachment = null
 }
 
 export async function syncOutbox({ quiet = false } = {}) {
-    if (state.previewMode) {
-        if (!quiet) notify("Sync is disabled in local preview mode.", "info");
-        return;
-    }
     if (state.isSyncing) {
         state.syncRequested = true;
         return;
@@ -94,7 +87,7 @@ export async function syncOutbox({ quiet = false } = {}) {
         return;
     }
     if (!state.driverUserId) {
-        if (!quiet) notify("Sign in as a driver before syncing queued events.", "error");
+        if (!quiet) notify("A central driver session is required to sync queued events.", "error");
         return;
     }
     let synced = 0;
@@ -228,10 +221,6 @@ export async function syncOutbox({ quiet = false } = {}) {
 }
 
 export async function acceptRoute(routeId) {
-    if (state.previewMode) {
-        notify("Starting routes is disabled in local preview mode.", "info");
-        return;
-    }
     if (state.route) {
         notify("Finish or return your current route before accepting another.", "error");
         return;
@@ -469,22 +458,6 @@ export function openException(orderId) {
 export function openRouteDetails(routeId) {
     const route = state.driverRoutes.find((item) => item.route_id === routeId);
     if (!route) return;
-    if (state.previewMode) {
-        const dialog = document.createElement("dialog");
-        dialog.className = "action-dialog route-dialog";
-        dialog.innerHTML = `<form method="dialog">
-            <button class="dialog-close" type="button" data-action="close-dialog" aria-label="Close">×</button>
-            <p class="eyebrow">SYNTHETIC SAMPLE ROUTE</p><h2>${escapeHTML(route.title)}</h2>
-            <p class="dialog-copy">${escapeHTML(route.area)} · ${route.stop_count} stops · ${route.distance_km} km · about ${Math.floor(route.duration_min / 60)}h ${route.duration_min % 60}m</p>
-            <section class="route-detail-pickup"><span class="pickup-pin">⌖</span><div><small>SAMPLE PICKUP</small><strong>${escapeHTML(route.pickup)}</strong></div></section>
-            <p class="field-hint">This is synthetic local preview data. No sign-in, Neon reads, or server writes are performed.</p>
-            <button class="button button-secondary button-wide" type="button" data-action="close-dialog">Close preview</button>
-        </form>`;
-        document.body.append(dialog);
-        dialog.showModal();
-        dialog.addEventListener("close", () => dialog.remove(), { once: true });
-        return;
-    }
     const driverStatus = state.driverProfile?.status;
     const vehicleMatches = state.driverProfile?.vehicle?.vehicle_id === route.vehicle_id;
     const canStart = driverStatus === "available" && vehicleMatches;
@@ -511,10 +484,6 @@ export function openRouteDetails(routeId) {
 }
 
 export async function startLocation() {
-    if (state.previewMode) {
-        notify("Location sharing is disabled in local preview mode.", "info");
-        return;
-    }
     try {
         const location = await getLocation();
         render();

@@ -42,9 +42,6 @@ export function normalizeDriverRoute(route) {
 }
 
 export async function apiRequest(path, options = {}) {
-    if (state.previewMode) {
-        throw new Error("API requests are disabled in local preview mode.");
-    }
     const request = {
         credentials: "include",
         ...options,
@@ -53,7 +50,7 @@ export async function apiRequest(path, options = {}) {
     let response = await fetch(`${apiBase()}${path}`, request);
     if (
         response.status === 401
-        && !["/auth/login", "/auth/logout", "/auth/refresh"].includes(path)
+        && path !== "/auth/refresh"
     ) {
         const refresh = await fetch(`${apiBase()}/auth/refresh`, {
             method: "POST",

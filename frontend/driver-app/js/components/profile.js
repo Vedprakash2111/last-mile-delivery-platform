@@ -2,14 +2,6 @@ import { state, escapeHTML } from "../state.js";
 
 export function profileView() {
     const identity = state.identity || {};
-    if (state.previewMode) {
-        return `<section class="page-heading"><p class="eyebrow">LOCAL PREVIEW</p><h1>Profile</h1><p>Synthetic sample account. This profile is not stored in Neon.</p></section>
-            <section class="profile-card"><div class="profile-avatar">P</div><div><h2>Preview Driver</h2><p>Local-only sample profile</p></div><span class="preview-badge">SAMPLE</span></section>
-            <section class="section-block settings-section"><div class="section-heading"><div><p class="eyebrow">ON THE ROAD</p><h3>Vehicle</h3></div></div><p>PREVIEW ONLY · No live vehicle is assigned.</p></section>
-            <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings & payouts</strong><small>Preview has no payout data</small></span><b>→</b></button>
-            <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>Preview has no live activity history</small></span><b>→</b></button>
-            <button class="button button-secondary signout-button" data-action="exit-local-preview">Exit local preview</button>`;
-    }
     const assignedVehicle = state.driverProfile?.vehicle || null;
     const selected = assignedVehicle?.vehicle_id || "";
     let vehicleOptions = state.vehicles;
@@ -42,7 +34,7 @@ export function profileView() {
             <div class="section-heading"><div><p class="eyebrow">CONNECTION</p><h3>Sync settings</h3></div></div>
             <label class="field-label gateway-label" for="gateway-api-url">Driver Gateway URL (API + event sync)</label>
             <input id="gateway-api-url" class="text-input" type="url" value="${escapeHTML(state.settings.driverGatewayBase || window.location.origin)}">
-            <p class="field-hint">Your signed-in httpOnly session cookie is used for profile and event requests. Authentication tokens are not exposed to page scripts.</p>
+            <p class="field-hint">Core API manages your centralized httpOnly session; the Driver App does not handle credentials. Authentication tokens are not exposed to page scripts.</p>
             <label class="field-label" for="google-maps-embed-key">Google Maps Embed API key</label>
             <input id="google-maps-embed-key" class="text-input" type="text" autocomplete="off" spellcheck="false" maxlength="200" value="${escapeHTML(state.settings.googleMapsEmbedKey || "")}" placeholder="Paste a Maps Embed API key">
             <p class="field-hint">Optional. Enables the in-app route map. This browser key is visible to app users; restrict it by website referrer and enable only Maps Embed API. Google Cloud project billing must be configured.</p>
@@ -50,6 +42,5 @@ export function profileView() {
         </section>
         <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings & payouts</strong><small>Payout data is not connected to the driver API</small></span><b>→</b></button>
         <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Activity & offline sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting` : "View recent driver actions"}</small></span><b>→</b></button>
-        <button class="button button-quiet signout-button" data-action="sign-out">Sign out</button>
         `;
 }

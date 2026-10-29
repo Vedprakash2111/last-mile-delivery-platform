@@ -6,11 +6,10 @@ export function earningsView() {
     const routeLabel = state.route?.title || "No active route";
     return `
         <section class="page-heading">
-            <p class="eyebrow">${state.previewMode ? "LOCAL PREVIEW" : "DRIVER SUMMARY"}</p>
+            <p class="eyebrow">DRIVER SUMMARY</p>
             <h1>Earnings</h1>
             <p>Delivery and payout information for your shift.</p>
         </section>
-        ${state.previewMode ? `<div class="notice notice-warm"><span>i</span><div><strong>Preview only</strong><p>Sample data is not connected to your account or payout history.</p></div></div>` : ""}
         <section class="earnings-card">
             <span class="earnings-card-icon">₹</span>
             <p class="eyebrow">PAYOUT SUMMARY</p>

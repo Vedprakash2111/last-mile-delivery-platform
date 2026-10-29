@@ -4,35 +4,13 @@ export const appRoot = document.getElementById("app-content");
 
 export const toastRegion = document.getElementById("toast-region");
 
-export const localPreviewRoutes = [
-    {
-        route_id: "local-preview-route-01",
-        status: "planned",
-        version: 1,
-        title: "Sample north loop",
-        area: "Preview area",
-        stop_count: 2,
-        distance_km: 8.4,
-        duration_min: 75,
-        pickup: "Sample pickup hub",
-        pickup_code: "PREVIEW-01",
-        vehicle_id: "local-preview-vehicle",
-        vehicle_registration: "PREVIEW ONLY",
-        is_preview: true,
-        stops: [
-            { order_id: "preview-order-01", sequence: 1, tracking_token: "PREVIEW-ORDER-01", recipient: "Sample recipient one", recipient_phone: null, address: "Sample delivery address one", window: "Preview time window", status: "pending" },
-            { order_id: "preview-order-02", sequence: 2, tracking_token: "PREVIEW-ORDER-02", recipient: "Sample recipient two", recipient_phone: null, address: "Sample delivery address two", window: "Preview time window", status: "pending" }
-        ]
-    }
-];
-
 export const state = {
     db: null,
-    view: "login",
+    view: "session-required",
     tab: "Today",
     deliveriesFilter: "All",
-    previewMode: false,
-    loginMessage: "",
+    routePanel: "map",
+    sessionMessage: "",
     identity: null,
     driverUserId: null,
     route: null,
