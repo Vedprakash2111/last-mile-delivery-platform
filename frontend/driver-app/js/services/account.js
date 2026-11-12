@@ -27,6 +27,7 @@ export async function loadDriverAccount(identity) {
     if (serverRoute) {
         state.pickedUp = savedRoute?.route_id === serverRoute.route_id && state.pickedUp;
         if (savedRoute?.route_id !== serverRoute.route_id) {
+            state.customerNoteUpdates = {};
             state.pickupScanned = new Set();
             state.stopScanned = new Set();
             state.completed = new Set(serverRoute.stops.filter((stop) => stop.status === "delivered").map((stop) => stop.order_id));
@@ -35,6 +36,7 @@ export async function loadDriverAccount(identity) {
         }
         await persistWorkState();
     } else {
+        state.customerNoteUpdates = {};
         state.pickedUp = false;
         state.pickupScanned = new Set();
         state.stopScanned = new Set();

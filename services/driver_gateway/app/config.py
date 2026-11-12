@@ -15,6 +15,14 @@ class DriverGatewayConfig(BaseModel):
     minio_access_key: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
     minio_secret_key: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
     minio_secure: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
+    driver_app_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv(
+            "DRIVER_APP_ORIGINS",
+            "http://127.0.0.1:8000,http://localhost:8000",
+        ).split(",")
+        if origin.strip()
+    ]
     jwt_secret_key: str
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
 

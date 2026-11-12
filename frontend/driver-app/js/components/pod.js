@@ -1,6 +1,6 @@
 import { escapeHTML } from "../state.js";
 
-export function captureProofOfDelivery(stop) {
+export function captureProofOfDelivery(stop, scannedAtStop = false) {
     return new Promise((resolve) => {
         const dialog = document.createElement("dialog");
         dialog.className = "action-dialog pod-dialog";
@@ -8,13 +8,15 @@ export function captureProofOfDelivery(stop) {
             <button class="dialog-close" type="button" data-pod-close aria-label="Close">×</button>
             <p class="eyebrow">PROOF OF DELIVERY</p>
             <h2>Handed to ${escapeHTML(stop.recipient)}?</h2>
-            <p class="dialog-copy">Choose one proof method. A recipient name can also be added as a note.</p>
-            <label class="field-label" for="proof-method">Proof method</label>
-            <select id="proof-method" class="select-input">
-                <option value="photo">Delivery photo</option>
-                <option value="signature">Recipient signature</option>
-                <option value="recipient_name">Recipient name</option>
-            </select>
+            <p class="dialog-copy">Choose a proof method and capture the handoff.</p>
+            <div class="delivery-instructions" role="note"><strong>Customer instructions</strong><span>Instructions are not provided by the delivery service.</span></div>
+            <p class="parcel-verified" role="status">${scannedAtStop ? "✓ Parcel scanned and matched to this stop" : "Parcel scan is completed from the active route before arrival."}</p>
+            <div class="proof-method-grid" role="group" aria-label="Proof of delivery method">
+                <button class="proof-method is-selected" type="button" data-proof-method="photo" aria-pressed="true"><span aria-hidden="true">▧</span><strong>Take delivery photo</strong></button>
+                <button class="proof-method" type="button" data-proof-method="signature" aria-pressed="false"><span aria-hidden="true">✎</span><strong>Collect signature</strong></button>
+                <button class="proof-method" type="button" data-proof-method="recipient_name" aria-pressed="false"><span aria-hidden="true">✓</span><strong>Recipient name</strong></button>
+            </div>
+            <input id="proof-method" type="hidden" value="photo">
             <label class="field-label" for="recipient-name">Recipient name (optional)</label>
             <input id="recipient-name" class="text-input" maxlength="120" autocomplete="name" placeholder="Name of person receiving parcel">
             <label class="field-label" for="pod-photo">Take or choose photo</label>
@@ -27,7 +29,7 @@ export function captureProofOfDelivery(stop) {
             <div id="pod-error" class="form-error" role="alert" hidden></div>
             <div class="dialog-actions">
                 <button class="button button-secondary" type="button" data-pod-close>Cancel</button>
-                <button class="button button-primary" type="submit">Save proof and delivery</button>
+                <button class="button button-success" type="submit">Mark delivery successful</button>
             </div>
             <p class="dialog-footnote">Evidence uploads to private MinIO storage; the current database has no POD reference field.</p>
         </form>`;
@@ -78,6 +80,12 @@ export function captureProofOfDelivery(stop) {
         const endDrawing = () => { drawing = false; };
 
         method.addEventListener("change", updateMethod);
+        dialog.querySelectorAll("[data-proof-method]").forEach((button) => {
+            button.addEventListener("click", () => {
+                method.value = button.dataset.proofMethod;
+                method.dispatchEvent(new Event("change"));
+            });
+        });
         updateMethod();
         dialog.querySelectorAll("[data-pod-close]").forEach((button) => {
             button.addEventListener("click", () => close());
@@ -86,6 +94,14 @@ export function captureProofOfDelivery(stop) {
             context.clearRect(0, 0, canvas.width, canvas.height);
             signed = false;
         });
+        const syncProofSelection = () => {
+            dialog.querySelectorAll("[data-proof-method]").forEach((button) => {
+                const selected = button.dataset.proofMethod === method.value;
+                button.classList.toggle("is-selected", selected);
+                button.setAttribute("aria-pressed", String(selected));
+            });
+        };
+        method.addEventListener("change", syncProofSelection);
         canvas.addEventListener("pointerdown", startDrawing);
         canvas.addEventListener("pointermove", draw);
         canvas.addEventListener("pointerup", endDrawing);
@@ -146,19 +162,21 @@ export function captureException(stop) {
             <button class="dialog-close" type="button" data-exception-close aria-label="Close">×</button>
             <p class="eyebrow">DELIVERY EXCEPTION</p><h2>What happened?</h2>
             <p class="dialog-copy">${escapeHTML(stop.recipient)} · ${escapeHTML(stop.address)}</p>
-            <label class="field-label" for="failure-reason">Reason</label>
-            <select id="failure-reason" name="failure_reason" class="select-input">
-                <option value="recipient_unavailable">Recipient unavailable</option>
-                <option value="wrong_address">Wrong address</option>
-                <option value="refused">Delivery refused</option>
-                <option value="other">Other</option>
-            </select>
+            <fieldset class="failure-reason-fieldset"><legend class="field-label">Choose a reason</legend>
+                <div class="failure-reason-grid">
+                    <label class="failure-reason-option"><input name="failure_reason" type="radio" value="recipient_unavailable" checked><span>Recipient unavailable</span></label>
+                    <label class="failure-reason-option"><input name="failure_reason" type="radio" value="wrong_address"><span>Wrong address</span></label>
+                    <label class="failure-reason-option"><input name="failure_reason" type="radio" value="refused"><span>Delivery refused</span></label>
+                    <label class="failure-reason-option"><input name="failure_reason" type="radio" value="other"><span>Other</span></label>
+                </div>
+            </fieldset>
             <label class="field-label" for="failure-notes">Notes (optional)</label>
             <textarea id="failure-notes" name="failure_notes" class="text-input" maxlength="500" rows="3"></textarea>
             <label class="field-label" for="exception-photo">Photo (optional)</label>
             <input id="exception-photo" name="photo" class="text-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment">
             <div id="exception-error" class="form-error" role="alert" hidden></div>
             <label class="check-label"><input name="return_to_hub" type="checkbox"><span>Mark order as returned to hub</span></label>
+            <section class="return-queue-notice"><strong>Return queue</strong><span>Physical return handoff is not tracked by the current service.</span></section>
             <p class="dialog-footnote">Return dispatch and photo references are not stored in the current database schema.</p>
             <div class="dialog-actions">
                 <button class="button button-secondary" type="button" data-exception-close>Cancel</button>
@@ -168,10 +186,19 @@ export function captureException(stop) {
         document.body.append(dialog);
         const form = dialog.querySelector("#exception-form");
         let result = null;
+        const syncFailureSelection = () => {
+            dialog.querySelectorAll(".failure-reason-option").forEach((option) => {
+                option.classList.toggle("is-selected", option.querySelector("input").checked);
+            });
+        };
         const close = (value = null) => {
             result = value;
             dialog.close();
         };
+        dialog.querySelectorAll('[name="failure_reason"]').forEach((input) => {
+            input.addEventListener("change", syncFailureSelection);
+        });
+        syncFailureSelection();
         dialog.querySelectorAll("[data-exception-close]").forEach((button) => {
             button.addEventListener("click", () => close());
         });

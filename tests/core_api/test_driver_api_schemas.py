@@ -9,6 +9,7 @@ from services.core_api.app.driver.schemas import (
     AssignVehicleRequest,
     DriverProfilePatch,
     DriverScanValidationRequest,
+    RouteStopResponse,
 )
 from services.core_api.app.driver.service import route_payload
 
@@ -73,6 +74,7 @@ def test_route_payload_orders_stops_and_uses_schema_fields():
                 sequence=2,
                 status=SimpleNamespace(value="pending"),
                 order=SimpleNamespace(
+                    status=SimpleNamespace(value="assigned"),
                     recipient_name="Second",
                     recipient_phone="+919876543210",
                     delivery_address="Second address",
@@ -88,6 +90,7 @@ def test_route_payload_orders_stops_and_uses_schema_fields():
                 sequence=1,
                 status=SimpleNamespace(value="pending"),
                 order=SimpleNamespace(
+                    status=SimpleNamespace(value="out_for_delivery"),
                     recipient_name="First",
                     recipient_phone="+919876543211",
                     delivery_address="First address",
@@ -108,4 +111,6 @@ def test_route_payload_orders_stops_and_uses_schema_fields():
     assert response["pickup_code"] == "NH-01"
     assert response["stops"][0]["planned_arrival_at"] == planned_arrival.isoformat()
     assert response["stops"][0]["tracking_token"] == "tracking-first"
+    assert response["stops"][0]["order_status"] == "out_for_delivery"
     assert response["stops"][0]["window_earliest"] == planned_arrival.isoformat()
+    assert RouteStopResponse.model_validate(response["stops"][0]).order_status == "out_for_delivery"

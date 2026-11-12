@@ -7,8 +7,8 @@ The Driver App is a mobile-friendly Progressive Web App (PWA) for profile and ve
 | Layer | Responsibility | Location |
 | --- | --- | --- |
 | PWA | Mobile UI, account and route screens, offline app shell, local event outbox | `frontend/driver-app/` |
-| Driver Gateway | Serves the PWA, proxies allowlisted driver APIs, validates and publishes driver events | `services/driver_gateway/` |
-| Core API | Central driver authentication and authorization, profile, vehicle, and route operations | `services/core_api/app/driver/` and `services/core_api/app/auth/` |
+| Driver Gateway | Serves the standalone PWA, proxies allowlisted driver APIs, validates and publishes driver events | `services/driver_gateway/` |
+| Core API | Serves the PWA at `/driver`; owns central driver authentication and authorization, profile, vehicle, and route operations | `services/core_api/app/driver/` and `services/core_api/app/auth/` |
 | PostgreSQL/PostGIS | Authoritative persistent application data and constraints | [`schema.sql`](../schema.sql), accessed by Core API |
 | Redis Streams | Transport for accepted driver events | `driver_events_stream`, accessed through `streaming/` |
 
@@ -26,28 +26,35 @@ The mobile-first UI covers the requested driver workflow through the existing HT
 
 | Design area | Current app surface |
 | --- | --- |
-| Home dashboard | Home tab: driver status, assigned route, network state, queued-sync status, daily stop counts, next route action, and an earnings-data availability preview. |
-| Routes and acceptance | Routes tab and route-details dialog: assigned planned routes can be reviewed with distance, duration, assigned vehicle, and a map preview; routes can be started when driver status and vehicle match. |
+| Home dashboard | Home tab: driver status, assigned route, network state, queued-sync status, daily stop counts, next route action, and an earnings-data availability preview. Profile includes a shift-readiness summary and real active-route performance counts. |
+| Availability and performance | Home shows a staff-managed, disabled availability switch. Stops completed comes from the active route; active hours and acceptance rate remain unavailable until the driver API supplies them. |
+| Order request overlay | `js/components/order-request.js` renders a high-contrast timed overlay for the `driver:order-request` browser event. Only an unexpired route already returned by the driver's assigned-route API can be started; offer-streams, distances, and payout are not provided by a backend integration. |
+| Routes and acceptance | Routes tab and route-details dialog: assigned planned routes can be reviewed with distance, duration, assigned vehicle, scheduled windows, and a map preview; eligible routes can be started by slider or button when driver status and vehicle match. Stop `order_status` is returned verbatim from the authoritative order status enum. |
 | Deliveries | Deliveries tab: active route manifest, per-stop pending/scanned/arrived/delivered/failed/skipped statuses, summary counts, and filters. Historical completed/failed/returned orders are unavailable because the API lists only planned and in-progress routes. |
 | Earnings | Secondary Earnings page, linked from Deliveries and Profile: delivered-stop context and sync status. Payout amounts are explicitly unavailable because no earnings API or schema-backed payout data exists. |
-| Pickup and scanning | Active Route tab: scan parcels with supported device barcode detection or manual tracking-token entry, then confirm pickup after the manifest is verified. |
-| Navigation and arrival | Active Route tab: route map/directions and explicit GPS check-in. |
-| Delivery proof | Delivery dialog: photo, signature, or recipient-name evidence. |
-| Exceptions and returns | Exception dialog: supported failure reason, optional notes/photo, and return-to-hub flag. |
-| Driver and sync settings | Profile and Activity views: editable supported profile fields, assigned vehicle registration, connection settings, and queued event status. Activity and earnings are secondary pages linked from Profile/Deliveries; the main navigation is Home, Routes, Deliveries, and Profile. |
+| Wallet and trip history | Earnings shows unavailable balance, base pay, tips, bonus, and instant payout. Delivery history presents an empty ledger state because there is no historical trips or transaction API; no fabricated amounts or statuses are displayed. |
+| Pickup and scanning | Active Route tab: scrollable customer manifest, scan parcels with supported device barcode detection or manual tracking-token entry, and confirm pickup after the manifest is verified. Mismatches use a modal warning. |
+| Navigation and arrival | Active Route tab: route map/directions, exact available stop address, parcel scan, route progress, and a sticky GPS check-in action after the parcel is verified. |
+| Customer communications | Active Route tab exposes customer chat and masked-call presentation only when route status is `in_progress` and that stop's `order_status` is exactly `out_for_delivery` (the schema label for In Transit). Route acceptance does not itself change order status, so the controls remain gated until an authoritative API response reports `out_for_delivery`. Quick replies are compose-only; message sending and masked calls stay disabled until their providers are integrated. |
+| Customer note updates | Active navigation can display an update delivered through the `driver:customer-note-updated` browser event; the payload is `{ order_id, notes, updated_at? }`. The handler rejects updates for stops outside the driver's active route or outside the In Transit status. A notification/customer-notes backend is not currently connected. |
+| Delivery proof | Delivery dialog: photo, signature, or recipient-name evidence. Customer instructions are identified as unavailable when the API does not provide them. |
+| Safety and emergency | Active Route shows a package checklist driven by route tracking tokens, existing BarcodeDetector/manual verification, and the existing photo/signature proof panel. OTP entry is disabled because no OTP verification API exists. SOS is shown only during an active In Transit stop and requires confirmation; dispatch remains unavailable and cannot send an alert. Navigation pivots from the assigned depot address to the next customer address after pickup; the route contract has no restaurant/merchant pickup leg. |
+| Exceptions and returns | Exception dialog: supported failure-reason grid, optional notes/photo, return-to-hub flag, and an explicit notice that physical return handling is not tracked. |
+| Driver and sync settings | Profile and Activity views: editable supported profile fields, assigned vehicle registration, connection settings, and queued event status. Online, low-signal (when supported by the browser), and offline states are shown. Activity and earnings are secondary pages linked from Profile/Deliveries; the main navigation is Home, Routes, Deliveries, and Profile. |
 
 The dashboard progress card reports delivered, total daily stops, and failed stops from the active route state. Its next-action card links back into the active route workflow. The Deliveries tab filters the current route manifest only; it does not imply that historical records are available. The app does not estimate earnings.
 
 Some Figma concepts cannot be connected to the current backend contract and are intentionally not presented as working features:
 
 - Authentication is provided by the centralized Core API session. The PWA does not collect credentials, register accounts, or log out; OTP login, KYC submission, and document verification endpoints are not available.
-- Driver availability is staff-managed. The top-bar online/offline indicator reports browser network connectivity; shift start/end, vehicle inspection, fuel/charging records, and a driver availability toggle are not available.
+- Driver availability is staff-managed. The top-bar indicator reports browser network connectivity, including low signal when the browser exposes that information; shift start/end, vehicle inspection, fuel/charging records, and a driver availability toggle are not available.
 - The route API returns routes already assigned to the driver, not offers. Route accept/reject, payout estimates, parcel-capacity validation, and stop reordering are not part of that contract.
 - Earnings and payout history are not available through the driver API or authoritative schema.
 - The route API returns planned and in-progress routes only. Historical delivery, returned-order, and shift-closeout endpoints are not available.
 - Arrival records an explicit GPS check-in; no geofence radius or geofence status is configured. The current POD API accepts photo/signature/name evidence but has no delivery OTP verification contract.
 - Vehicle profiles expose registration/type and capacity measurements for vehicle search; VIN/chassis selection and licence/insurance verification fields are not available.
-- There are no notification, dispatcher/support, SOS/incident, reschedule/reattempt, return-handover, or parcel damage/missing-report endpoints in the driver API.
+- There are no chat, masked-call, customer-note-update notification, dispatcher/support, SOS/incident, reschedule/reattempt, return-handover, or parcel damage/missing-report endpoints in the driver API.
+- There are no route-offer distance/payout, online availability toggle, wallet or instant payout, order-item checklist, OTP verification, masked merchant/courier call, or historical trip-ledger APIs. Browser event names used as integration seams (`driver:order-request`, `driver:customer-note-updated`) are UI hooks only and are not backed by a server push connection.
 
 These are backend/API compatibility gaps, not frontend fallbacks. Do not add synthetic values or controls that imply those operations succeeded.
 
@@ -58,9 +65,10 @@ The PWA is implemented with HTML, CSS, and JavaScript ES modules:
 - `frontend/driver-app/index.html` is the entry page; `css/style.css` contains app styling.
 - `js/app.js` initializes storage, restores the centrally managed Core API session, and wires UI actions.
 - `js/components/` contains the account, navigation, route, dashboard, activity, barcode scanner, and proof-capture views.
+- `js/components/communications.js` contains lifecycle-gated chat/call controls and the customer-note update event handler; message and call providers are integration points, not simulated services.
 - `js/services/account.js` handles profile, vehicle, and account actions; it does not implement login, registration, or logout.
 - `js/services/driver-events.js` handles route actions, location collection, and event synchronization.
-- `js/api.js` sends same-origin requests to Gateway and refreshes the central Core API session when needed.
+- `js/api.js` sends credentialed requests to the configured Gateway and refreshes the central Core API session when needed.
 - `js/storage.js` manages IndexedDB work state and the ordered event outbox.
 - `manifest.webmanifest` and `sw.js` provide installability and offline app-shell caching.
 
@@ -111,7 +119,7 @@ The access cookie is short-lived and scoped to `/`; the refresh cookie is scoped
 | `PATCH` | `/driver/profile` | Updates `full_name` and/or E.164 `phone`. Role, email, and driver status are not editable through this endpoint. |
 | `GET` | `/driver/vehicles?search=KA%2003&limit=25` | Searches active, unassigned vehicles by registration number; the driver's own assigned vehicle may also appear. |
 | `PUT` | `/driver/vehicle` | Assigns a vehicle using exactly one of `{"vehicle_id":"<uuid>"}` or `{"registration_number":"KA 03 MN 4821"}`. |
-| `GET` | `/driver/routes` | Lists this driver's assigned planned or in-progress routes and their manifests. |
+| `GET` | `/driver/routes` | Lists this driver's assigned planned or in-progress routes and their manifests, including each stop's authoritative `order_status`. |
 | `POST` | `/driver/routes/{route_id}/accept` | Starts an assigned planned route. In one transaction Core API updates the route and driver status. Repeating a successful request is idempotent. |
 | `POST` | `/driver/routes/{route_id}/scan` | Verifies that a tracking token belongs to an open stop on this driver's active route; does not create a scan database record. |
 | `POST` | `/driver/routes/{route_id}/stops/{order_id}/pod-authorize` | Internal Gateway-to-Core API authorization check for an open stop; no state change. |
@@ -178,7 +186,7 @@ Every event includes `event_id`, `driver_id`, and `timestamp`; Gateway validates
    honcho start -f Procfile.dev
    ```
 
-4. Ensure centralized authentication has established a Core API session usable by the Driver Gateway origin, then open `http://127.0.0.1:8002/` in a browser. The process group includes Core API, which Gateway needs for session validation and driver self-service requests. Other services and external integrations also require their configured dependencies.
+4. Ensure centralized authentication has established a driver session, then open `http://127.0.0.1:8000/driver` in a browser. Core API serves the PWA there and the browser connects to the Driver Gateway on port 8002 for event sync. The Gateway still serves the standalone PWA at its root. Other services and external integrations also require their configured dependencies.
 
 For Linux/macOS setup and the full platform requirements, use the root [`README.md`](../README.md). Do not commit `.env` or production credentials.
 
@@ -187,6 +195,7 @@ For Linux/macOS setup and the full platform requirements, use the root [`README.
 | Variable | Purpose |
 | --- | --- |
 | `CORE_API_URL` | Core API base URL used by Gateway proxy. |
+| `DRIVER_APP_ORIGINS` | Comma-separated exact browser origins allowed to make credentialed requests to Gateway; for local Core API hosting, include `http://127.0.0.1:8000` and/or `http://localhost:8000`. |
 | `REDIS_URL` | Redis connection used for driver event ingestion. |
 | `JWT_SECRET_KEY` | Shared signing/verification secret for Core API and Gateway. |
 | `JWT_ALGORITHM` | JWT algorithm; configured as `HS256`. |
@@ -194,7 +203,7 @@ For Linux/macOS setup and the full platform requirements, use the root [`README.
 | `MINIO_ENDPOINT` | MinIO host and port, without a URL scheme. |
 | `MINIO_SECURE` | Set `true` when MinIO is reachable over TLS; use `false` for local HTTP. |
 
-On Render, configure the Gateway's `CORE_API_URL` to the Core API service URL, and provide the required secrets and Redis URL through the service environment.
+On Render, configure the Gateway's `CORE_API_URL` to the Core API service URL, set `DRIVER_APP_ORIGINS` to the Core API browser origin, and set Core API's `DRIVER_GATEWAY_URL` to the Gateway service URL. Provide the required secrets and Redis URL through the service environment.
 
 ## Current implementation boundaries
 

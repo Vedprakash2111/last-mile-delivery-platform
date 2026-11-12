@@ -32,7 +32,7 @@ The Gateway's declared routes and mounts are:
 | `GET`, `POST` | `/auth/{path}` | Allowlisted Core API auth proxy |
 | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` | `/driver/{path}` | Allowlisted Core API driver API proxy |
 
-Do not confuse a standalone service URL with a mounted/unified application path. In the standalone Gateway, use `/driver/events`. A unified app may mount Gateway under `/driver`, producing a different effective path; inspect that app's router composition before changing client URLs. The checked-in PWA uses the standalone/same-origin Gateway paths.
+Do not confuse a standalone service URL with a mounted/unified application path. In the standalone Gateway, use `/driver/events`. Core API serves the PWA at `/driver` but sends API and event requests to the configured standalone Gateway; the event path remains `/driver/events`.
 
 The Gateway proxy forwards only `Accept`, `Authorization`, `Content-Type`, and `Cookie` request headers. It forwards selected response headers (`Cache-Control`, `Content-Disposition`, `Content-Type`, `ETag`, `Last-Modified`, `Location`) and preserves `Set-Cookie`. It forwards query parameters and request bodies to Core API, uses a 15-second timeout (5-second connect timeout), and does not follow redirects. Unlisted endpoints return `404`; do not assume the proxy is a general reverse proxy.
 
@@ -40,7 +40,7 @@ Allowlisted auth operations are `GET /auth/me` and `POST /auth/forgot-password`,
 
 ### 1.2 Browser authentication handshake
 
-1. The browser sends same-origin requests with `credentials: "include"`; the checked-in API helper defaults its Gateway base to `window.location.origin`.
+1. The browser sends credentialed requests with `credentials: "include"`; Core API injects `DRIVER_GATEWAY_URL` into its served PWA, while the standalone Gateway uses its own origin.
 2. Login sends credentials to `POST /auth/login`. Core API sets HttpOnly access and refresh cookies and returns only session metadata; cookie token values are not JavaScript-accessible.
 3. The app calls `GET /auth/me`, verifies that the resolved roles include `driver`, then loads profile, routes, and vehicles. Session presence is recorded in `sessionStorage` as a boolean only.
 4. On an eligible API request returning `401`, the app helper posts to `/auth/refresh` and retries the original request once if refresh succeeds. Login/logout/refresh are excluded from this retry.
@@ -163,7 +163,8 @@ The root `.env.example` is the checked-in inventory. Most platform values are no
 | `SMTP_PASSWORD` | Core API SMTP credential | Server-only secret |
 | `PUBLIC_BASE_URL` | Public Core API URL used in reset links | Server configuration, not an API key |
 | `COOKIE_SECURE` | Adds Secure behavior to auth cookies | Set `false` only for local HTTP; `true` for HTTPS |
-| `DRIVER_APP_ORIGINS` | Present in `.env.example`; not consumed by the inspected Gateway config/routes | Do not assume it enables CORS or change origin policy without wiring and testing it |
+| `DRIVER_APP_ORIGINS` | Exact browser-origin allowlist consumed by Driver Gateway CORS middleware | Include only the browser origins that need credentialed Gateway requests |
+| `DRIVER_GATEWAY_URL` | Core API-served PWA's Gateway endpoint | Set to the Gateway origin; not an API key |
 | `NUM_VIRTUAL_DRIVERS` | Simulator configuration | Not a Driver App variable |
 | `ORDER_GENERATION_RATE_SEC` | Simulator configuration | Not a Driver App variable |
 
@@ -190,7 +191,8 @@ SMTP_USER=<smtp-user>
 SMTP_PASSWORD=<smtp-app-password>
 PUBLIC_BASE_URL=http://localhost:8000
 COOKIE_SECURE=false
-DRIVER_APP_ORIGINS=http://localhost:8765
+DRIVER_APP_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
+DRIVER_GATEWAY_URL=http://127.0.0.1:8002
 NUM_VIRTUAL_DRIVERS=5
 ORDER_GENERATION_RATE_SEC=10
 ```
@@ -200,11 +202,11 @@ This is a platform example, not a requirement that every deployment configure ev
 ### 2.2 Browser-safe configuration and secret rules
 
 - The frontend is plain HTML/CSS/ES modules with no build-time environment-variable prefix. There is no `VITE_`, `NEXT_PUBLIC_`, or equivalent configuration pipeline in the checked-in Driver App. Do not invent one or assume server environment variables are hidden if inserted into served JavaScript.
-- Default Gateway base URL is same-origin. A driver may override it in Profile → Sync settings; the `driverGatewayBase` is stored in this device's `localStorage` (`driver.settings`). Do not put database, Redis, MinIO, SMTP, or JWT secrets there.
-- There is no `DRIVER_GATEWAY_BASE_URL` entry in the checked-in `.env.example`; do not treat the browser's per-device Gateway setting as a server environment variable. Browser geolocation uses the browser permission API and has no separate location-service API key. `NOMINATIM_URL` is a server-side geocoder endpoint, not a browser key.
+- Core API serves the configured Gateway URL to the PWA. A driver may override it in Profile → Sync settings; `driverGatewayBase` is stored in this device's `localStorage` (`driver.settings`). Do not put database, Redis, MinIO, SMTP, or JWT secrets there.
+- `DRIVER_GATEWAY_URL` configures the Core API-served PWA's Gateway endpoint; the per-device `driverGatewayBase` setting can override it. Browser geolocation uses the browser permission API and has no separate location-service API key. `NOMINATIM_URL` is a server-side geocoder endpoint, not a browser key.
 - Google Maps Embed is optional. Its key is entered in local Profile → Sync settings and saved on-device as `googleMapsEmbedKey`; it is a browser-visible key, not a secret. Restrict it to the required Maps Embed API and allowed referrers/hosts in the provider console. The route UI falls back to a map handoff/placeholder if it is not configured. Do not add a Google key to server secrets and do not treat it as private.
 - Inject server secrets from local untracked `.env` during development and the platform's secret/environment manager (Render in the documented deployment) in production. Never bake secrets into HTML, source maps, PWA assets, build output, test fixtures, logs, screenshots, or commits.
-- Use same-origin cookies where possible. If a separate origin is required, configure browser credentials, explicit allowed origins, cookie policy, and HTTPS coherently on the server. `DRIVER_APP_ORIGINS` alone is not proof of CORS support.
+- Use same-origin cookies where possible. If a separate origin is required, configure browser credentials, explicit allowed origins, cookie policy, and HTTPS coherently on the server. Driver Gateway now applies CORS from `DRIVER_APP_ORIGINS`; verify those exact origins in deployment configuration.
 
 ## 3. Tech Stack & Library Constraints
 
@@ -319,7 +321,7 @@ frontend/
     │   └── style.css               # Driver-app-scoped styles and design tokens
     └── js/
         ├── app.js                  # Startup, event delegation, view/action wiring
-        ├── api.js                  # Same-origin Gateway client, session refresh, route normalization
+        ├── api.js                  # Configured Gateway client, session refresh, route normalization
         ├── state.js                # In-memory UI state and safe device settings
         ├── storage.js              # IndexedDB schema, active-route snapshot, ordered outbox
         ├── views.js                # Screen composition and view selection

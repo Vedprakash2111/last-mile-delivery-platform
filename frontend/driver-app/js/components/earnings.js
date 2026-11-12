@@ -17,6 +17,15 @@ export function earningsView() {
             <p>Your driver account does not currently provide earnings or payout data.</p>
             <span class="earnings-status">NO PAYOUT DATA CONNECTED</span>
         </section>
+        <section class="wallet-breakdown" aria-label="Wallet earnings breakdown">
+            <div class="section-heading"><div><p class="eyebrow">WALLET</p><h3>Balance breakdown</h3></div></div>
+            <div class="wallet-balance"><span>Current balance</span><strong>Not available</strong></div>
+            <div class="wallet-line-item"><span>Base pay</span><strong>Not provided</strong></div>
+            <div class="wallet-line-item"><span>Customer tips</span><strong>Not provided</strong></div>
+            <div class="wallet-line-item"><span>Surge / bonus</span><strong>Not provided</strong></div>
+            <button class="button button-primary button-wide" type="button" disabled aria-disabled="true">Instant payout · unavailable</button>
+            <p>Payout balances, earnings breakdowns, and payout transfers are not supported by the driver API.</p>
+        </section>
         <section class="section-block earnings-activity">
             <div class="section-heading"><div><p class="eyebrow">DELIVERY ACTIVITY</p><h3>This shift</h3></div></div>
             <div class="earnings-metrics">

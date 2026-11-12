@@ -8,7 +8,7 @@ import {
 import { apiBase, apiRequest, normalizeDriverRoute } from "../api.js";
 import { render } from "../views.js";
 import { routeMap } from "../components/routes.js";
-import { scanBarcode } from "../components/scanner.js";
+import { scanBarcode, showScanWarning } from "../components/scanner.js";
 import { captureException, captureProofOfDelivery } from "../components/pod.js";
 
 export function eventLocation() {
@@ -295,7 +295,8 @@ async function verifyScannedStop(code, stage, stop) {
 
 export async function scanPickupParcel() {
     if (!state.route || state.pickedUp) return;
-    const code = await scanBarcode("Scan a parcel for pickup");
+    const nextStop = state.route.stops.find((stop) => !state.pickupScanned.has(stop.order_id));
+    const code = await scanBarcode("Scan a parcel for pickup", nextStop?.tracking_token || "");
     if (!code) return;
     try {
         const stop = await verifyScannedStop(code, "pickup");
@@ -314,7 +315,7 @@ export async function scanPickupParcel() {
         render();
         notify(`Parcel verified: ${stop.recipient}.`, "success");
     } catch (error) {
-        notify(error.message || "Could not verify this parcel.", "error");
+        showScanWarning(error.message || "Could not verify this parcel.");
     }
 }
 
@@ -368,7 +369,7 @@ export async function arriveAtStop(orderId) {
 export async function scanStopParcel(orderId) {
     const stop = nextStop(orderId);
     if (!stop || !state.pickedUp) return;
-    const code = await scanBarcode(`Scan parcel for stop ${stop.sequence}`);
+    const code = await scanBarcode(`Scan parcel for stop ${stop.sequence}`, stop.tracking_token || "");
     if (!code) return;
     try {
         const matchedStop = await verifyScannedStop(code, "stop", stop);
@@ -387,14 +388,14 @@ export async function scanStopParcel(orderId) {
         render();
         notify(`Parcel verified for ${matchedStop.recipient}.`, "success");
     } catch (error) {
-        notify(error.message || "Could not verify this parcel.", "error");
+        showScanWarning(error.message || "Could not verify this parcel.");
     }
 }
 
 export function openDelivery(orderId) {
     const stop = nextStop(orderId);
     if (!stop) return;
-    void captureProofOfDelivery(stop).then(async (proof) => {
+    void captureProofOfDelivery(stop, state.stopScanned.has(orderId)).then(async (proof) => {
         if (!proof) return;
         try {
             await getLocation();
@@ -406,6 +407,7 @@ export function openDelivery(orderId) {
             await recordTelemetry("delivery.completed", { order_id: orderId });
             state.completed.add(orderId);
             state.arrived.delete(orderId);
+            delete state.customerNoteUpdates[orderId];
             await persistWorkState();
             render();
             notify("Delivery saved. Proof and completion are queued in order.", "success");
@@ -441,6 +443,7 @@ export function openException(orderId) {
             });
             state.failed.add(orderId);
             state.arrived.delete(orderId);
+            delete state.customerNoteUpdates[orderId];
             await persistWorkState();
             render();
             notify(
@@ -473,9 +476,17 @@ export function openRouteDetails(routeId) {
         <p class="dialog-copy">${escapeHTML(route.area)} · ${route.stop_count} stops · ${route.distance_km} km · about ${Math.floor(route.duration_min / 60)}h ${route.duration_min % 60}m</p>
         <section class="route-detail-pickup"><span class="pickup-pin">⌖</span><div><small>PICKUP LOCATION</small><strong>${escapeHTML(route.pickup)}</strong></div></section>
         <section class="route-detail-pickup"><span class="pickup-pin">▰</span><div><small>ASSIGNED VEHICLE</small><strong>${escapeHTML(vehicle?.registration_number || "No vehicle linked")}${vehicle?.type ? ` · ${escapeHTML(vehicle.type.replaceAll("_", " "))}` : ""}</strong></div></section>
+        <section class="route-window-list" aria-label="Scheduled delivery windows">
+            <div><strong>Delivery windows</strong><small>Priority flags are not provided by the route service.</small></div>
+            ${route.stops.slice(0, 3).map((stop) => `<p><span aria-hidden="true">◷</span><strong>Stop ${stop.sequence}</strong><span>${escapeHTML(stop.window)}</span></p>`).join("")}
+            ${route.stops.length > 3 ? `<small>+ ${route.stops.length - 3} more stops in the route manifest</small>` : ""}
+        </section>
         <div class="route-dialog-map">${routeMap(route)}</div>
         <p class="field-hint">${escapeHTML(canStart ? "This route is assigned to your driver account. Starting it updates the live route and driver status." : startMessage)}</p>
         <p class="field-hint">Payout and parcel-capacity requirements are not included in this route assignment.</p>
+        ${canStart ? `<label class="route-swipe-label" for="route-start-slider">Slide to start this assigned route</label>
+            <input id="route-start-slider" class="route-start-slider" type="range" min="0" max="100" value="0" step="1" aria-label="Slide to start this assigned route" aria-valuetext="Not started" data-route-start="${escapeHTML(route.route_id)}">
+            <p class="route-swipe-hint" data-route-start-hint>Slide to the end to start · keyboard-accessible</p>` : ""}
         <button class="button button-primary button-wide" type="button" data-action="accept-route" data-route="${escapeHTML(route.route_id)}" ${canStart ? "" : "disabled"}>Start assigned route <span>→</span></button>
     </form>`;
     document.body.append(dialog);

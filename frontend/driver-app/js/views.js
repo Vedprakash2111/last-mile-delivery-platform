@@ -2,11 +2,13 @@ import { appRoot, escapeHTML, state } from "./state.js";
 import { brandMark } from "./components/brand.js";
 import { topbar } from "./components/navigation.js";
 import { todayView } from "./components/dashboard.js";
-import { routeOpportunitiesView, routeView } from "./components/routes.js";
+import { routeOpportunitiesView, routeStickyAction, routeView } from "./components/routes.js";
 import { deliveriesView } from "./components/deliveries.js";
 import { activityView, loadActivity } from "./components/activity.js";
 import { earningsView } from "./components/earnings.js";
 import { profileView } from "./components/profile.js";
+import { closeCustomerChatIfInactive } from "./components/communications.js";
+import { closeSosConfirmationIfInactive, sosButton } from "./components/safety-tools.js";
 
 export function tabContent() {
     if (state.tab === "Today") return todayView();
@@ -20,12 +22,18 @@ export function tabContent() {
 
 export function render() {
     if (!state.db) return;
+    closeCustomerChatIfInactive(state.view !== "app");
+    closeSosConfirmationIfInactive();
     if (state.view === "session-required") {
         appRoot.innerHTML = `<main class="session-required">${brandMark("session-required-mark")}<p class="eyebrow">LASTMILE / DRIVER</p>
             <h1>Central driver session required</h1>
-            <p>Your organization's Core API authentication manages driver access. Complete central sign-in, then check your session here.</p>
+            <p>Use the organization sign-in page to authenticate, then return to this app to continue your route.</p>
             ${state.sessionMessage ? `<p class="session-message" role="status">${escapeHTML(state.sessionMessage)}</p>` : ""}
-            <button class="button button-primary" data-action="check-central-session">Check session again</button></main>`;
+            <div class="session-actions">
+                <button class="button button-primary" data-action="check-central-session">Check session again</button>
+                <button class="button button-secondary" data-action="open-central-login">Open central sign in</button>
+                <button class="button button-secondary" data-action="logout-driver-app">Log out</button>
+            </div></main>`;
         return;
     }
     const offlineBanner = !navigator.onLine
@@ -37,7 +45,9 @@ export function render() {
         { id: "Deliveries", label: "Deliveries", icon: "▤" },
         { id: "Profile", label: "Profile", icon: "○" }
     ];
-    appRoot.innerHTML = `${topbar()}${offlineBanner}<main class="main-content">${tabContent()}</main>
+    const stickyRouteAction = state.tab === "Route" ? routeStickyAction() : "";
+    const emergencyAction = state.tab === "Route" ? sosButton() : "";
+    appRoot.innerHTML = `${topbar()}${offlineBanner}<main class="main-content ${stickyRouteAction ? "has-sticky-action" : ""}">${tabContent()}</main>${stickyRouteAction}${emergencyAction}
         <nav class="bottom-nav" aria-label="Main navigation">${tabs.map((tab) => `
             <button class="nav-item ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? "is-active" : ""}" data-tab="${tab.id}" ${state.tab === tab.id || (tab.id === "Routes" && state.tab === "Route") ? 'aria-current="page"' : ""}>
                 <span class="nav-icon">${tab.icon}</span><span>${tab.label}</span>

@@ -1,7 +1,22 @@
 import { state } from "./state.js";
 
+export function defaultDriverGatewayBase() {
+    if (window.DRIVER_GATEWAY_URL) return window.DRIVER_GATEWAY_URL;
+    const gatewayUrl = new URL(window.location.origin);
+    if (gatewayUrl.port === "8000") gatewayUrl.port = "8002";
+    return gatewayUrl.origin;
+}
+
+export function configuredDriverGatewayBase() {
+    const savedBase = state.settings.driverGatewayBase;
+    if (!savedBase || savedBase.replace(/\/+$/, "") === window.location.origin) {
+        return defaultDriverGatewayBase();
+    }
+    return savedBase;
+}
+
 export function apiBase() {
-    return (state.settings.driverGatewayBase || window.location.origin).replace(/\/+$/, "");
+    return configuredDriverGatewayBase().replace(/\/+$/, "");
 }
 
 export function normalizeDriverRoute(route) {
@@ -30,6 +45,7 @@ export function normalizeDriverRoute(route) {
             sequence: stop.sequence,
             order_id: stop.order_id,
             recipient: stop.recipient_name,
+            order_status: stop.order_status,
             recipient_phone: stop.recipient_phone,
             address: stop.delivery_address,
             tracking_token: stop.tracking_token,

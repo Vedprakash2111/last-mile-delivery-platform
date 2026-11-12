@@ -1,4 +1,9 @@
 import { state, escapeHTML } from "../state.js";
+import {
+    customerCommunicationActions,
+    customerNoteUpdateBanner
+} from "./communications.js";
+import { orderChecklist, sosButton, verificationPanel } from "./safety-tools.js";
 
 function routeDirectionsUrl(route, stops = route.stops) {
     const orderedStops = [...stops].sort((left, right) => left.sequence - right.sequence);
@@ -27,6 +32,33 @@ function routeEmbedUrl(route, stops, apiKey) {
         parameters.set("waypoints", stops.slice(0, -1).map((stop) => stop.address).join("|"));
     }
     return `https://www.google.com/maps/embed/v1/directions?${parameters.toString()}`;
+}
+
+function activePhaseMap(route, stop) {
+    const isPickup = !state.pickedUp;
+    const destination = isPickup ? route.pickup_address || route.pickup : stop?.address;
+    const label = isPickup ? "Depot pickup" : "Customer doorstep";
+    if (!destination) {
+        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div><p class="map-message">The destination address is unavailable.</p></section>`;
+    }
+    if (/demo only|synthetic|preview/i.test(destination) && !route.stops.some((item) => item.tracking_token?.startsWith("MAP-"))) {
+        return `<section class="route-map-section"><div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div></div><p class="map-message">Map navigation is disabled for this route because its address is synthetic.</p></section>`;
+    }
+    const directions = new URLSearchParams({
+        api: "1",
+        destination,
+        travelmode: "driving"
+    });
+    const apiKey = state.settings.googleMapsEmbedKey?.trim();
+    const embed = new URLSearchParams({ key: apiKey || "", q: destination });
+    return `<section class="route-map-section">
+        <div class="section-heading"><div><p class="eyebrow">ACTIVE NAVIGATION</p><h3>${label}</h3></div>
+            <a class="text-button" href="https://www.google.com/maps/dir/?${escapeHTML(directions.toString())}" target="_blank" rel="noopener noreferrer">Get directions <span>↗</span></a>
+        </div>
+        ${apiKey
+            ? `<iframe class="route-map-frame" title="Map to ${label}" src="https://www.google.com/maps/embed/v1/place?${escapeHTML(embed.toString())}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`
+            : `<p class="map-message">Map preview requires a Google Maps Embed API key. Use Get directions to open navigation for this ${isPickup ? "depot" : "customer"} stop.</p>`}
+    </section>`;
 }
 
 export function routeMap(route) {
@@ -91,6 +123,7 @@ export function activeRouteView() {
     const progressPercent = route.stops.length ? Math.round((progressCount / route.stops.length) * 100) : 0;
     const mapUrl = (address) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving`;
     return `
+        ${nextStop ? customerNoteUpdateBanner(nextStop) : ""}
         <section class="route-hero">
             <div class="route-hero-top"><span class="route-tag route-tag-light">ACTIVE DELIVERY</span><span class="live-pill"><i></i> IN PROGRESS</span></div>
             <h2>${escapeHTML(route.title)}<span> · ${escapeHTML(route.area)}</span></h2>
@@ -110,12 +143,20 @@ export function activeRouteView() {
                 <button class="button button-secondary button-wide" data-action="scan-pickup">Scan next parcel <span>⌖</span></button>
                 <button class="button button-primary button-wide" data-action="confirm-pickup" ${manifestComplete ? "" : "disabled"}>Confirm pickup <span>→</span></button>
                 <p class="field-hint">Scans are verified against your route manifest. Scan history is queued to Redis, not saved as a database record.</p>
+                <ol class="pickup-manifest" aria-label="Pickup manifest">
+                    ${route.stops.map((stop) => `<li class="${state.pickupScanned.has(stop.order_id) ? "is-scanned" : ""}">
+                        <span class="manifest-check" aria-hidden="true">${state.pickupScanned.has(stop.order_id) ? "✓" : "○"}</span>
+                        <span><strong>${escapeHTML(stop.recipient)}</strong><small>Stop ${stop.sequence} · ${escapeHTML(stop.address)}</small></span>
+                        <span class="manifest-status">${state.pickupScanned.has(stop.order_id) ? "Scanned" : "To scan"}</span>
+                    </li>`).join("")}
+                </ol>
             </section>` : `
             <section class="next-stop-card">
                 <div class="next-stop-heading"><div><p class="eyebrow">NEXT DELIVERY · STOP ${remaining.length ? String(route.stop_count - remaining.length + 1).padStart(2, "0") : "—"}</p><h3>${nextStop ? escapeHTML(nextStop.recipient) : "Route complete"}</h3></div><span class="next-stop-number">${remaining.length ? String(route.stop_count - remaining.length + 1).padStart(2, "0") : "✓"}</span></div>
                 ${nextStop ? `<p class="stop-address">${escapeHTML(nextStop.address)}</p>
+                ${customerCommunicationActions(nextStop)}
+                <p class="merchant-contact-status">Merchant / restaurant contact details are not provided for this route.</p>
                 <div class="stop-contact">
-                    ${nextStop.recipient_phone ? `<a class="button button-secondary stop-contact-action" href="tel:${escapeHTML(nextStop.recipient_phone)}"><span aria-hidden="true">☎</span> Call recipient</a>` : ""}
                     ${/demo only|synthetic|preview/i.test(nextStop.address) && !nextStop.tracking_token?.startsWith("MAP-")
                         ? `<span class="map-notice">Navigation unavailable for sample address</span>`
                         : `<a class="button button-primary stop-contact-action" href="${mapUrl(nextStop.address)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span> Get directions</a>`}
@@ -123,11 +164,11 @@ export function activeRouteView() {
                 </div>
                 <p class="stop-window"><span aria-hidden="true">◷</span><span>${escapeHTML(nextStop.window || "Delivery window unavailable")}</span></p>
                 <div class="stop-actions">
-                    ${!state.stopScanned.has(nextStop.order_id) ? `<button class="button button-secondary button-wide" data-action="scan-stop" data-order="${escapeHTML(nextStop.order_id)}">Scan parcel for this stop <span>⌖</span></button>` : ""}
-                    ${state.stopScanned.has(nextStop.order_id) && !state.arrived.has(nextStop.order_id) ? `<button class="button button-primary button-wide" data-action="arrive-stop" data-order="${escapeHTML(nextStop.order_id)}">I'm at the stop · GPS check-in <span>→</span></button>` : ""}
+                    ${!state.stopScanned.has(nextStop.order_id) ? "" : `<p class="parcel-verified" role="status">✓ Parcel scanned and matched to this stop</p>`}
                     ${state.arrived.has(nextStop.order_id) ? `<button class="button button-primary button-wide" data-action="open-delivery" data-order="${escapeHTML(nextStop.order_id)}">Complete delivery <span>→</span></button>` : ""}
                     <button class="button button-quiet" data-action="open-exception" data-order="${escapeHTML(nextStop.order_id)}">Report an issue</button>
                 </div>` : `<p class="stop-address">Every stop is accounted for. Nice work out there.</p><button class="button button-primary" data-action="finish-route">Finish this route <span>→</span></button>`}
+                ${nextStop ? `${orderChecklist(nextStop)}${verificationPanel(nextStop)}` : ""}
                 <p class="field-hint">Arrival uses an explicit GPS check-in. No geofence radius is configured.</p>
             </section>`}
         <div class="route-display-toolbar">
@@ -137,7 +178,7 @@ export function activeRouteView() {
                 <button type="button" data-route-panel="feed" aria-pressed="${state.routePanel === "feed"}" class="${state.routePanel === "feed" ? "is-active" : ""}">Stop feed</button>
             </div>
         </div>
-        ${state.routePanel === "map" ? routeMap(route) : `<section class="section-block stop-list-section" aria-label="Route stop feed">
+        ${state.routePanel === "map" ? activePhaseMap(route, nextStop) : `<section class="section-block stop-list-section" aria-label="Route stop feed">
             <div class="section-heading"><div><p class="eyebrow">YOUR MANIFEST</p><h3>Delivery stops</h3></div><span class="count-pill">${route.stops.length} shown</span></div>
             <ol class="stop-list">${route.stops.map((stop, index) => {
                 const done = state.completed.has(stop.order_id);
@@ -145,11 +186,48 @@ export function activeRouteView() {
                 const active = nextStop?.order_id === stop.order_id;
                 return `<li class="stop-row ${done ? "is-done" : ""} ${failed ? "is-failed" : ""} ${active ? "is-next" : ""}">
                     <span class="stop-marker">${done ? "✓" : failed ? "!" : String(index + 1).padStart(2, "0")}</span>
-                    <div class="stop-info"><strong>${escapeHTML(stop.recipient)}</strong><span>${escapeHTML(stop.address)}</span><small>${escapeHTML(stop.window)}</small>${stop.recipient_phone ? `<a href="tel:${escapeHTML(stop.recipient_phone)}">Call ${escapeHTML(stop.recipient_phone)}</a>` : ""}</div>
+                    <div class="stop-info"><strong>${escapeHTML(stop.recipient)}</strong><span>${escapeHTML(stop.address)}</span><small>${escapeHTML(stop.window)}</small></div>
                     <span class="stop-result">${done ? "Delivered" : failed ? "Exception" : active ? "Next up" : "Queued"}</span>
                 </li>`;
             }).join("")}</ol>
         </section>`}`;
+}
+
+export function routeStickyAction() {
+    const route = state.route;
+    if (!route || state.tab !== "Route" || !state.pickedUp) return "";
+    const nextStop = route.stops.find((stop) => (
+        !state.completed.has(stop.order_id) && !state.failed.has(stop.order_id)
+    ));
+    if (!nextStop) {
+        return `<div class="sticky-route-action">
+            <button class="button button-primary button-wide" data-action="finish-route">All stops accounted for · Finish route <span>→</span></button>
+        </div>`;
+    }
+    const stopNumber = route.stops.indexOf(nextStop) + 1;
+    if (!state.pickedUp) {
+        const scanned = state.pickupScanned.size;
+        const action = scanned === route.stops.length ? "confirm-pickup" : "scan-pickup";
+        const label = scanned === route.stops.length
+            ? "Confirm depot pickup"
+            : `Scan pickup package · ${scanned} of ${route.stops.length}`;
+        return `<div class="sticky-route-action">
+            <button class="button button-primary button-wide" data-action="${action}">${label} <span>→</span></button>
+        </div>`;
+    }
+    if (!state.stopScanned.has(nextStop.order_id)) {
+        return `<div class="sticky-route-action">
+            <button class="button button-primary button-wide" data-action="scan-stop" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Scan package <span>→</span></button>
+        </div>`;
+    }
+    if (state.arrived.has(nextStop.order_id)) {
+        return `<div class="sticky-route-action">
+            <button class="button button-primary button-wide" data-action="open-delivery" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Complete delivery <span>→</span></button>
+        </div>`;
+    }
+    return `<div class="sticky-route-action">
+        <button class="button button-primary button-wide" data-action="arrive-stop" data-order="${escapeHTML(nextStop.order_id)}">Stop ${stopNumber} of ${route.stops.length} · Tap to arrive <span>→</span></button>
+    </div>`;
 }
 
 export function routeOpportunitiesView() {

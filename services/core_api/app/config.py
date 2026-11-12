@@ -18,6 +18,12 @@ class CoreAPIConfig(BaseModel):
     # --- Database ---
     database_url: str = os.getenv("DATABASE_URL", "")
 
+    # --- Driver Gateway ---
+    driver_gateway_url: str = os.getenv(
+        "DRIVER_GATEWAY_URL",
+        "http://127.0.0.1:8002",
+    ).rstrip("/")
+
     # --- Redis ---
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 

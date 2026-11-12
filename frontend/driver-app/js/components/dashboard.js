@@ -11,6 +11,11 @@ export function todayView() {
         ? Math.round(((completedStops + failedStops) / totalStops) * 100)
         : 0;
     const availableRoutes = state.driverRoutes.filter((route) => route.status === "planned");
+    const driverStatus = state.identity?.driver_status || "unavailable";
+    const isOnline = ["available", "on_route"].includes(driverStatus);
+    const pendingPickupCount = state.route && !state.pickedUp
+        ? Math.max(0, state.route.stops.length - state.pickupScanned.size)
+        : 0;
     return `
         <section class="welcome-row"><div><p class="eyebrow">${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }).toUpperCase()}</p><h1>${greeting()}</h1></div><span class="weather-mark" aria-label="Ready for the day">✳</span></section>
         ${!state.identity?.driver_status ? `<div class="notice notice-warm"><span>!</span><div><strong>Driver profile is not linked yet</strong><p>Route and vehicle details are unavailable for this account.</p></div></div>` : ""}
@@ -24,6 +29,26 @@ export function todayView() {
                     ? `<span>VEHICLE · ${escapeHTML(state.driverProfile.vehicle.registration_number)}</span>`
                     : ""}
             </div>
+        </section>
+        <section class="availability-panel" aria-label="Driver availability">
+            <div><p class="eyebrow">AVAILABILITY</p><strong>${isOnline ? "Online" : "Offline"}</strong>
+                <small>Availability is managed by your fleet team.</small></div>
+            <button class="availability-switch" type="button" role="switch" aria-checked="${isOnline}" disabled aria-label="Driver availability is managed by staff">
+                <span></span>
+            </button>
+        </section>
+        <section class="task-overview" aria-label="Active tasks and pending pickups">
+            <article><span>Active tasks</span><strong>${state.route ? openStops : 0}</strong><small>${state.route ? "stops remaining" : "No active route"}</small></article>
+            <article><span>Pending pickups</span><strong>${pendingPickupCount}</strong><small>${state.route && !state.pickedUp ? "packages to scan at depot" : "No depot pickup pending"}</small></article>
+        </section>
+        <section class="daily-metrics-panel" aria-label="Daily performance metrics">
+            <div class="section-heading"><div><p class="eyebrow">PERFORMANCE</p><h3>Today</h3></div></div>
+            <div class="daily-metrics-grid">
+                <div><strong>${state.route ? completedStops : "—"}</strong><span>Stops completed</span></div>
+                <div><strong>—</strong><span>Hours active</span></div>
+                <div><strong>—</strong><span>Acceptance rate</span></div>
+            </div>
+            <p>Only stop totals are available from the active route.</p>
         </section>
         ${state.route ? `<section class="daily-progress" aria-label="Today's delivery progress">
             <div class="daily-progress-heading"><div><p class="eyebrow">TODAY'S ROUTE</p><h2>Delivery progress</h2></div><strong>${progressPercent}%</strong></div>
@@ -43,7 +68,7 @@ export function todayView() {
         </section>` : ""}
         ${state.route ? `<div class="section-heading"><div><p class="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h3>Active route</h3></div><button class="text-button" data-tab="Route">Open route <span>→</span></button></div>
             ${routeSummary(state.route, "Continue")}
-            <div class="home-quick-actions"><button data-action="start-location"><span>⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span>↻</span><strong>Sync activity</strong><small>${state.outboxCount} waiting</small></button></div>
+            <div class="home-quick-actions"><button data-action="start-location"><span>⌖</span><strong>Share location</strong><small>GPS check-in</small></button><button data-action="sync"><span>↻</span><strong>Sync activity</strong><small>${state.outboxCount} waiting</small></button><button data-action="logout-driver-app"><span>↩</span><strong>Log out</strong><small>Return to central sign in</small></button></div>
         ` : `
             <div class="section-heading"><div><p class="eyebrow">YOUR ASSIGNED WORK</p><h3>Planned routes</h3></div><span class="count-pill">${availableRoutes.length} assigned</span></div>
             ${availableRoutes.length

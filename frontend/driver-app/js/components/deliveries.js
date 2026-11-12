@@ -82,6 +82,12 @@ export function deliveriesView() {
         <section class="notice notice-warm delivery-history-note">
             <span>i</span><div><strong>Past delivery history</strong><p>The driver API currently returns planned and in-progress routes only. Historical completed, failed, or returned orders are not available here.</p></div>
         </section>
+        <section class="trip-ledger" aria-label="Delivery history ledger">
+            <div class="section-heading"><div><p class="eyebrow">TRIP LEDGER</p><h3>Past deliveries</h3></div></div>
+            <div class="trip-ledger-empty"><span aria-hidden="true">▤</span><strong>History is not connected</strong>
+                <p>Trip dates, final statuses, transaction amounts, and historical order timelines are not provided by the driver API.</p></div>
+            <button class="button button-secondary button-wide" type="button" disabled aria-disabled="true">Order timeline · unavailable</button>
+        </section>
         <button class="profile-link-card" data-tab="Earnings"><span class="activity-summary-icon">₹</span><span><strong>Earnings & payouts</strong><small>Payout data is not connected to the driver API</small></span><b>→</b></button>
         <button class="profile-link-card" data-tab="Activity"><span class="activity-summary-icon">↻</span><span><strong>Offline activity & sync</strong><small>${state.outboxCount ? `${state.outboxCount} item${state.outboxCount === 1 ? "" : "s"} waiting to sync` : "View pending device activity"}</small></span><b>→</b></button>`;
 }

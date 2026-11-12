@@ -14,6 +14,7 @@ export const state = {
     identity: null,
     driverUserId: null,
     route: null,
+    customerNoteUpdates: {},
     pickedUp: false,
     pickupScanned: new Set(),
     stopScanned: new Set(),

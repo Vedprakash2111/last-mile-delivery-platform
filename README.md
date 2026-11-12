@@ -121,6 +121,17 @@ honcho start -f Procfile.dev
 
 This will spin up all 5 isolated microservices (`core_api`, `control_tower`, `driver_gateway`, `routing_worker`, and `simulator`) concurrently in the background and multiplex their logs into your current terminal. Press `Ctrl+C` to cleanly shut them all down.
 
+### Driver app demo data
+
+Use this only with a development/demo Neon database. In the Neon SQL Editor, run these scripts in order:
+
+1. `db/seed/driver_showcase.sql` creates the showcase driver and initial route.
+2. `frontend/driver-app/demo-data.sql` adds two sample parcels, barcode tokens `SHOWCASE-HYD-001` through `SHOWCASE-HYD-005`, and 10 sample rows each for package scans, delivery exceptions, customer messages, and driver earnings.
+
+The showcase sign-in is `john.doe.driver@showcase.test` / `DriverDemo123!`. Sign in through the central app, open the Driver app, and accept the planned route. The scanner shows **Fill barcode from route** when the selected parcel has a tracking token; selecting it fills the manifest token, and **Verify parcel** still follows the normal route-validation flow. Showcase addresses are marked demo-only so they are not used for real navigation.
+
+These are demo records, not operational data. Seeded scan history does not pre-mark parcels as scanned in the browser, and message/exception/earnings history is not currently loaded by the Driver app. Do not seed `offline_event_outbox`: it is a processing queue, not demo history. Never use the showcase credentials or sample records in production.
+
 ---
 
 ## 🐳 Docker & Cloud Deployment

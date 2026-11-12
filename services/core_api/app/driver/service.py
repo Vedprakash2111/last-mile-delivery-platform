@@ -57,6 +57,7 @@ def route_payload(route: Route) -> dict:
                 "order_id": stop.order_id,
                 "sequence": stop.sequence,
                 "status": stop.status.value,
+                "order_status": stop.order.status.value,
                 "recipient_name": stop.order.recipient_name,
                 "recipient_phone": stop.order.recipient_phone,
                 "delivery_address": stop.order.delivery_address,

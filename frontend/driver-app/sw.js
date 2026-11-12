@@ -1,4 +1,4 @@
-const CACHE_NAME = "fieldnote-driver-v25";
+const CACHE_NAME = "fieldnote-driver-v28";
 const APP_SHELL = [
     "/",
     "/static/driver-app/css/style.css",
@@ -9,6 +9,9 @@ const APP_SHELL = [
     "/static/driver-app/js/views.js",
     "/static/driver-app/js/components/navigation.js",
     "/static/driver-app/js/components/routes.js",
+    "/static/driver-app/js/components/communications.js",
+    "/static/driver-app/js/components/order-request.js",
+    "/static/driver-app/js/components/safety-tools.js",
     "/static/driver-app/js/components/dashboard.js",
     "/static/driver-app/js/components/earnings.js",
     "/static/driver-app/js/components/deliveries.js",

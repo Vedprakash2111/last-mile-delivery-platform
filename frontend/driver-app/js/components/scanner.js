@@ -1,4 +1,18 @@
-export function scanBarcode(title = "Scan parcel barcode") {
+export function showScanWarning(message) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "action-dialog scan-warning-dialog";
+    dialog.innerHTML = `<p class="eyebrow">PACKAGE NOT VERIFIED</p>
+        <h2>Check this parcel</h2>
+        <p class="dialog-copy scan-warning-message"></p>
+        <button class="button button-primary button-wide" type="button">Try again</button>`;
+    dialog.querySelector(".scan-warning-message").textContent = message;
+    dialog.querySelector("button").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+}
+
+export function scanBarcode(title = "Scan parcel barcode", manifestTrackingToken = "") {
     return new Promise((resolve) => {
         const dialog = document.createElement("dialog");
         dialog.className = "action-dialog scanner-dialog";
@@ -9,6 +23,7 @@ export function scanBarcode(title = "Scan parcel barcode") {
             <p class="scanner-status" role="status">Camera scan or enter the tracking number.</p>
             <label class="field-label" for="tracking-code">Tracking number</label>
             <input id="tracking-code" name="tracking_code" class="text-input" autocomplete="off" autocapitalize="characters" required>
+            ${manifestTrackingToken ? `<button class="scanner-demo-button" type="button" data-manifest-barcode>Fill barcode from route</button>` : ""}
             <div class="dialog-actions">
                 <button class="button button-secondary" type="button" data-scanner-close>Cancel</button>
                 <button class="button button-primary" type="submit">Verify parcel</button>
@@ -61,6 +76,11 @@ export function scanBarcode(title = "Scan parcel barcode") {
             event.preventDefault();
             if (!form.reportValidity()) return;
             finish(input.value.trim());
+        });
+        dialog.querySelector("[data-manifest-barcode]")?.addEventListener("click", () => {
+            input.value = manifestTrackingToken;
+            status.textContent = `Route barcode ready: ${manifestTrackingToken}. Select Verify parcel.`;
+            input.focus();
         });
         dialog.addEventListener("close", () => {
             stopCamera();

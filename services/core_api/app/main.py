@@ -26,7 +26,7 @@ from services.core_api.app.admin.deps import require_admin
 from services.core_api.app.admin.security import csrf_check
 from services.core_api.app.admin.routes import activity, drivers, merchants, orders, overview, users, warehouses
 from services.core_api.app.panels import router as panels_router
-from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS
+from services.core_api.app.admin.security import ADMIN_SECURITY_HEADERS, DRIVER_APP_SECURITY_HEADERS
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,8 @@ async def admin_security_headers_middleware(request: Request, call_next):
         path == panel_path or path.startswith(panel_path + "/")
         for panel_path in protected_panel_paths
     ):
-        for key, value in ADMIN_SECURITY_HEADERS.items():
+        security_headers = DRIVER_APP_SECURITY_HEADERS if path == "/driver" else ADMIN_SECURITY_HEADERS
+        for key, value in security_headers.items():
             response.headers[key] = value
     if path == "/api/users" or path.startswith("/api/users/"):
         response.headers["Cache-Control"] = "no-store"
@@ -121,6 +122,7 @@ app.mount("/static/register/js", StaticFiles(directory=frontend_dir / "public" /
 app.mount("/static/reset-password/js", StaticFiles(directory=frontend_dir / "public" / "reset-password" / "js"), name="static-reset-password-js")
 app.mount("/static/track/css", StaticFiles(directory=frontend_dir / "public" / "track" / "css"), name="static-track-css")
 app.mount("/static/track/js", StaticFiles(directory=frontend_dir / "public" / "track" / "js"), name="static-track-js")
+app.mount("/static/driver-app", StaticFiles(directory=frontend_dir / "driver-app"), name="static-driver-app")
 
 
 @app.get("/health", tags=["Health"])

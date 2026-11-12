@@ -3,7 +3,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from services.driver_gateway.app.config import config
 from services.driver_gateway.app.driver_api.router import (
     close_core_api_client,
     router as driver_api_router,
@@ -27,6 +29,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Driver Gateway API", version="1.0.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.driver_app_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.mount(
     "/static/shared/js",
     StaticFiles(directory=FRONTEND_DIR / "shared" / "js"),

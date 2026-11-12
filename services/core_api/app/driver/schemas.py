@@ -61,6 +61,7 @@ class RouteStopResponse(BaseModel):
     order_id: UUID
     sequence: int
     status: str
+    order_status: str
     recipient_name: str
     recipient_phone: str
     delivery_address: str
